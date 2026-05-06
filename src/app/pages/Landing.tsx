@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router";
 import { motion } from "motion/react";
+import { API_BASE_URL } from "../utils/api";
 
 export function Landing() {
   const navigate = useNavigate();
@@ -72,7 +73,9 @@ export function Landing() {
       >
         {/* Google sign-in – Airbnb button-secondary style */}
         <button
-          onClick={() => navigate("/home")}
+          onClick={() => {
+            window.location.href = `${API_BASE_URL}/auth/google/login`;
+          }}
           className="w-full max-w-[360px] flex items-center justify-center gap-2.5 bg-white text-[#222222] h-14 px-6 rounded-full font-semibold text-[15px] transition-all border border-[#dddddd] hover:border-[#222222] active:scale-[0.98]"
           style={{ boxShadow: "rgba(0,0,0,0.02) 0 0 0 1px, rgba(0,0,0,0.04) 0 2px 6px 0, rgba(0,0,0,0.10) 0 4px 8px 0" }}
         >

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { Lock, ArrowLeft } from "lucide-react";
+import { api } from "../utils/api";
 
 const MAX_CHARS = 30000;
 const DANGER_KEYWORDS = ["자해", "자살", "죽고 싶", "죽고싶", "폭행", "폭력", "살인", "죽이고", "때리", "죽여", "자살하", "자해하", "칼로 찌", "스스로 목숨"];
@@ -15,6 +16,7 @@ export function InviteJoin() {
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
   const [text, setText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const roomData = roomId ? JSON.parse(localStorage.getItem(`room_${roomId}`) || "null") : null;
   const creatorName = roomData?.createdBy || "상대방";
@@ -25,9 +27,18 @@ export function InviteJoin() {
     if (roomData?.pin && pinInput !== roomData.pin) { setPinError(true); return; }
     setPinError(false); setStep("write");
   };
-  const handleSubmit = () => {
-    if (!text.trim() || !roomId) return;
+  const handleSubmit = async () => {
+    if (!text.trim() || !roomId || isSubmitting) return;
     if (hasDanger(text)) { navigate("/safety"); return; }
+    setIsSubmitting(true);
+    try {
+      await api.joinSession(roomId);
+    } catch (error) {
+      console.error("세션 참여 실패", error);
+      alert("세션 참여에 실패했어요. 백엔드 서버 실행과 로그인 상태를 확인해주세요.");
+      setIsSubmitting(false);
+      return;
+    }
     const data = JSON.parse(localStorage.getItem(`room_${roomId}`) || "{}");
     data.personB = { name: nickname.trim(), text: text.trim() };
     if (data.personA) {
@@ -40,6 +51,7 @@ export function InviteJoin() {
       localStorage.setItem(`room_${roomId}`, JSON.stringify(data));
       navigate(`/waiting/${roomId}?role=B`);
     }
+    setIsSubmitting(false);
   };
 
   if (step === "welcome") {
@@ -131,9 +143,9 @@ export function InviteJoin() {
               value={text} onChange={(e) => { if (e.target.value.length <= MAX_CHARS) setText(e.target.value); }} />
             <div className="absolute bottom-3 right-4 text-[10.5px] text-[#929292]">{text.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</div>
           </div>
-          <button disabled={!text.trim()} onClick={handleSubmit}
+          <button disabled={!text.trim() || isSubmitting} onClick={handleSubmit}
             className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl hover:bg-[#ffb3c4] disabled:bg-[#F0F0F5] disabled:text-[#C7C7CC] active:scale-[0.98] transition-all font-semibold">
-            작성 완료
+            {isSubmitting ? "저장 중..." : "작성 완료"}
           </button>
         </motion.div>
       </main>

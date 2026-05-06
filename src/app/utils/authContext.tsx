@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { API_BASE_URL } from './api';
 
 export interface User {
   id: string;
@@ -26,27 +27,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem('cm_user');
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
     setIsLoading(false);
   }, []);
 
   const login = () => {
-    // Mock Google login
-    const mockUser: User = {
-      id: 'u_' + Math.random().toString(36).slice(2, 8),
-      name: '김지우',
-      email: 'jiwoo.kim@gmail.com',
-      avatar: '',
-    };
-    localStorage.setItem('cm_user', JSON.stringify(mockUser));
-    setUser(mockUser);
+    window.location.href = `${API_BASE_URL}/auth/google/login`;
   };
 
   const logout = () => {
-    localStorage.removeItem('cm_user');
     setUser(null);
   };
 
