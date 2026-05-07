@@ -3,17 +3,25 @@ import { useNavigate } from "react-router";
 import { Plus, ChevronRight, Calendar, ChevronLeft, Link as LinkIcon, Users, Sparkles, ArrowRight, Brain, User, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
+const TUTORIAL_SEEN_KEY = "tigyeok_home_tutorial_seen";
+
 export function HomePage() {
   const navigate = useNavigate();
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
 
   useEffect(() => {
-    setShowTutorial(true);
+    if (localStorage.getItem(TUTORIAL_SEEN_KEY) !== "true") {
+      setShowTutorial(true);
+    }
   }, []);
 
   const TOTAL_STEPS = 5;
-  const completeTutorial = () => setShowTutorial(false);
+  const completeTutorial = () => {
+    localStorage.setItem(TUTORIAL_SEEN_KEY, "true");
+    setShowTutorial(false);
+    setTutorialStep(0);
+  };
   const nextStep = () => {
     if (tutorialStep < TOTAL_STEPS - 1) setTutorialStep((prev) => prev + 1);
     else completeTutorial();
@@ -175,7 +183,10 @@ export function HomePage() {
           </span>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowTutorial(true)}
+              onClick={() => {
+                setTutorialStep(0);
+                setShowTutorial(true);
+              }}
               className="h-8 px-3 bg-[#f7f7f7] hover:bg-[#ebebeb] rounded-lg text-[12.5px] text-[#636366] font-medium transition-colors flex items-center gap-1.5"
             >
               <Sparkles size={13} className="text-[#c9485b]" />

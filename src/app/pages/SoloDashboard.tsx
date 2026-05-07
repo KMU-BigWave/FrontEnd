@@ -337,7 +337,7 @@ export function SoloDashboard() {
         <div className="w-8" />
       </header>
 
-      <div className="flex-1 overflow-y-auto pb-12">
+      <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1200px] mx-auto">
         {/* Title */}
         <div className="px-5 pt-6 pb-5 bg-white border-b border-[#EBEBF0]">
           <div className="flex items-center gap-2 mb-2.5">

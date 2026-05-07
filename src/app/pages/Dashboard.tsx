@@ -208,7 +208,7 @@ function VennCard({ catData, cat, data, pick, sel }: {
 
           <div
             className="relative w-full mx-auto"
-            style={{ maxWidth: 720, aspectRatio: "8 / 5" }}
+            style={{ maxWidth: 720, aspectRatio: "8 / 5", containerType: "inline-size" }}
           >
 
             {/* Left circle */}
@@ -239,7 +239,8 @@ function VennCard({ catData, cat, data, pick, sel }: {
                    style={{ paddingInline: "8px 5px" }}>
                 {catData.meOnly.map((item, i) => (
                   <KwBtn key={`me-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-pink-200 rounded-xl text-[11.5px] font-medium text-[#222] text-center break-keep leading-snug hover:border-pink-400 hover:bg-pink-50/40 transition-colors" />
+                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-pink-200 rounded-xl font-medium text-[#222] text-center break-keep leading-snug hover:border-pink-400 hover:bg-pink-50/40 transition-colors"
+                    style={{ fontSize: "calc(0.532cqw + 7.667px)" }} />
                 ))}
               </div>
 
@@ -247,11 +248,12 @@ function VennCard({ catData, cat, data, pick, sel }: {
               <div className="flex-[2] flex flex-col items-center justify-center gap-2"
                    style={{ paddingInline: "3px" }}>
                 {catData.shared.length === 0 ? (
-                  <span className="text-[9px] text-[#D1D1D6] text-center leading-snug">공통<br/>없음</span>
+                  <span className="text-[#D1D1D6] text-center leading-snug"
+                    style={{ fontSize: "calc(0.417cqw + 6px)" }}>공통<br/>없음</span>
                 ) : catData.shared.map((item, i) => (
                   <KwBtn key={`sh-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2 py-1.5 rounded-xl text-[10px] font-bold text-white text-center break-keep leading-snug hover:opacity-80 transition-opacity"
-                    style={{ backgroundColor: cat.color }} />
+                    className="w-fit max-w-full px-2 py-1.5 rounded-xl font-bold text-white text-center break-keep leading-snug hover:opacity-80 transition-opacity"
+                    style={{ backgroundColor: cat.color, fontSize: "calc(0.463cqw + 6.667px)" }} />
                 ))}
               </div>
 
@@ -260,7 +262,8 @@ function VennCard({ catData, cat, data, pick, sel }: {
                    style={{ paddingInline: "5px 8px" }}>
                 {catData.partnerOnly.map((item, i) => (
                   <KwBtn key={`pt-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xl text-[11.5px] font-medium text-[#222] text-center break-keep leading-snug hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors" />
+                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xl font-medium text-[#222] text-center break-keep leading-snug hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors"
+                    style={{ fontSize: "calc(0.532cqw + 7.667px)" }} />
                 ))}
               </div>
             </div>
@@ -393,7 +396,7 @@ export function DashboardPage() {
         <div className="w-8" />
       </header>
 
-      <div className="flex-1 overflow-y-auto pb-12">
+      <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1200px] mx-auto">
         {/* Title */}
         <div className="px-5 pt-6 pb-5 bg-white border-b border-[#EBEBF0]">
           <div className="flex items-center gap-2 mb-2.5">
