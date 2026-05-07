@@ -35,6 +35,15 @@ export type Session = {
   updated_at: string;
 };
 
+export type Me = {
+  id: string;
+  email: string;
+  name: string;
+  picture_url: string | null;
+  gender: string | null;
+  age: number | null;
+};
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -81,16 +90,32 @@ async function request<T>(path: string, init: RequestInit = {}) {
 }
 
 export const api = {
-  createSession(input: { relationshipType: RelationshipType; mode?: SessionMode }) {
+  getMe() {
+    return request<Me>("/users/me");
+  },
+
+  createSession(input: {
+    relationshipType: RelationshipType;
+    mode?: SessionMode;
+    roomPassword: string;
+  }) {
     return request<Session>("/sessions", {
       method: "POST",
       body: JSON.stringify(input),
     });
   },
 
-  joinSession(sessionId: string) {
+  joinSession(sessionId: string, roomPassword: string) {
     return request<{ sessionId: string }>(`/sessions/${sessionId}/join`, {
       method: "POST",
+      body: JSON.stringify({ roomPassword }),
+    });
+  },
+
+  submitInput(sessionId: string, rawText: string) {
+    return request<unknown>(`/sessions/${sessionId}/inputs`, {
+      method: "POST",
+      body: JSON.stringify({ rawText }),
     });
   },
 };
