@@ -22,23 +22,42 @@ export function InviteJoin() {
   const creatorName = roomData?.createdBy || "상대방";
 
   const handleJoin = () => { if (!nickname.trim()) return; setStep("pin"); };
-  const handlePinSubmit = () => {
+  const handlePinSubmit = async () => {
     if (pinInput.length !== 4) return;
-    if (roomData?.pin && pinInput !== roomData.pin) { setPinError(true); return; }
-    setPinError(false); setStep("write");
+    if (!roomId) return;
+
+    try {
+      await api.joinSession(roomId, pinInput);
+      setPinError(false);
+      setStep("write");
+    } catch (error) {
+      const apiError = error as { code?: string; message?: string };
+
+      if (apiError.code === "INVALID_ROOM_PASSWORD") {
+        setPinError(true);
+      } else if (apiError.code === "ALREADY_JOINED") {
+        setPinError(false);
+        setStep("write");
+      } else {
+        alert(apiError.message ?? "세션 참여 실패");
+      }
+    }
   };
+
   const handleSubmit = async () => {
     if (!text.trim() || !roomId || isSubmitting) return;
     if (hasDanger(text)) { navigate("/safety"); return; }
     setIsSubmitting(true);
+
     try {
-      await api.joinSession(roomId);
+      await api.submitInput(roomId, text.trim());
     } catch (error) {
-      console.error("세션 참여 실패", error);
-      alert("세션 참여에 실패했어요. 백엔드 서버 실행과 로그인 상태를 확인해주세요.");
+      console.error("입력 저장 실패", error);
+      alert("입력 저장에 실패했어요.");
       setIsSubmitting(false);
       return;
     }
+
     const data = JSON.parse(localStorage.getItem(`room_${roomId}`) || "{}");
     data.personB = { name: nickname.trim(), text: text.trim() };
     if (data.personA) {

@@ -39,7 +39,7 @@ export function TwoPersonInput() {
     const relationshipType = RELATIONSHIP_TYPE_MAP[relationship] ?? "OTHER";
     setIsCreating(true);
     try {
-      const session = await api.createSession({ relationshipType, mode: "DUAL" });
+      const session = await api.createSession({ relationshipType, mode: "DUAL", roomPassword: pin });
       const id = session.id;
       localStorage.setItem(`room_${id}`, JSON.stringify({
         createdBy: nickname.trim(),
@@ -69,10 +69,20 @@ export function TwoPersonInput() {
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!text.trim() || !roomId || isSubmitting) return;
     if (hasDanger(text)) { navigate("/safety"); return; }
     setIsSubmitting(true);
+
+    try {
+      await api.submitInput(roomId, text.trim());
+    } catch (error) {
+      console.error("입력 저장 실패", error);
+      alert("입력 저장에 실패했어요.");
+      setIsSubmitting(false);
+      return;
+    }
+
     const roomData = JSON.parse(localStorage.getItem(`room_${roomId}`) || "{}");
     roomData.personA = { name: nickname.trim(), text: text.trim() };
     if (roomData.personB) {
