@@ -1,15 +1,10 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { API_BASE_URL } from './api';
+import { API_BASE_URL, api, type Me } from './api';
 
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  avatar: string;
-}
+export type User = Me;
 
 interface AuthContextType {
-  user: User | null;
+  user: Me | null;
   login: () => void;
   logout: () => void;
   isLoading: boolean;
@@ -23,11 +18,14 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<Me | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setIsLoading(false);
+    api.getMe()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setIsLoading(false));
   }, []);
 
   const login = () => {
