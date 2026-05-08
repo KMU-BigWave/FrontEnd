@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, LogOut, Camera } from "lucide-react";
 import { motion } from "motion/react";
 import { useAuth } from "../utils/authContext";
+import { api } from "../utils/api";
 
 const GENDER_OPTIONS = [
   { value: "male", label: "남성" },
@@ -10,12 +11,53 @@ const GENDER_OPTIONS = [
   { value: "none", label: "선택 안 함" },
 ];
 
+// 백엔드 성별 enum (M/F/OTHER/UNSPECIFIED) ↔ 프론트 (male/female/none) 매핑
+const GENDER_API_TO_FRONT: Record<string, string> = {
+  M: "male",
+  F: "female",
+  OTHER: "none",
+  UNSPECIFIED: "none",
+};
+
+const GENDER_FRONT_TO_API: Record<string, string> = {
+  male: "M",
+  female: "F",
+  none: "UNSPECIFIED",
+};
+
 export function MyPage() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [gender, setGender] = useState<string>("male");
-  const [age, setAge] = useState<string>("28");
+  const [gender, setGender] = useState<string>("none");
+  const [age, setAge] = useState<string>("");
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // user 데이터 로드되면 성별/나이 동기화
+  useEffect(() => {
+    if (user) {
+      setGender(user.gender ? GENDER_API_TO_FRONT[user.gender] ?? "none" : "none");
+      setAge(user.age != null ? String(user.age) : "");
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      await api.updateMyProfile({
+        gender: GENDER_FRONT_TO_API[gender] ?? "UNSPECIFIED",
+        age: age ? Number(age) : null,
+      });
+      setIsEditing(false);
+    } catch (error) {
+      console.error("프로필 저장 실패", error);
+      alert("프로필 저장에 실패했어요.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const displayName = user?.name ?? "게스트";
   const displayEmail = user?.email ?? "로그인 정보 없음";
   const photoInitial = displayName.charAt(0).toUpperCase();
@@ -33,10 +75,11 @@ export function MyPage() {
           </button>
           <span className="text-[15px] font-bold text-[#1C1C1E] tracking-tight">마이 페이지</span>
           <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="text-[13px] font-semibold text-[#c9485b] hover:opacity-70 transition-opacity"
+            onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
+            disabled={isSaving}
+            className="text-[13px] font-semibold text-[#c9485b] hover:opacity-70 transition-opacity disabled:opacity-50"
           >
-            {isEditing ? "완료" : "편집"}
+            {isEditing ? (isSaving ? "저장 중..." : "완료") : "편집"}
           </button>
         </div>
       </header>
@@ -148,7 +191,7 @@ export function MyPage() {
                     <span className="text-[13px] text-[#636366]">세</span>
                   </div>
                 ) : (
-                  <span className="text-[14px] font-semibold text-[#1C1C1E]">{age}세</span>
+                  <span className="text-[14px] font-semibold text-[#1C1C1E]">{age ? `${age}세` : "-"}</span>
                 )}
               </div>
             </div>

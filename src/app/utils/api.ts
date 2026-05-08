@@ -118,4 +118,11 @@ export const api = {
       body: JSON.stringify({ rawText }),
     });
   },
+
+  updateMyProfile(input: { gender?: string | null; age?: number | null }) {
+    return request<Me>("/users/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  },
 };
