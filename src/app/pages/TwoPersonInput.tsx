@@ -77,8 +77,14 @@ export function TwoPersonInput() {
     try {
       await api.submitInput(roomId, text.trim());
     } catch (error) {
+      const apiError = error as { code?: string; message?: string };
+      // 백엔드 모더레이션이 위험 콘텐츠로 차단한 경우
+      if (apiError.code === "INPUT_BLOCKED") {
+        navigate("/safety");
+        return;
+      }
       console.error("입력 저장 실패", error);
-      alert("입력 저장에 실패했어요.");
+      alert(apiError.message ?? "입력 저장에 실패했어요.");
       setIsSubmitting(false);
       return;
     }

@@ -27,7 +27,7 @@ const GENDER_FRONT_TO_API: Record<string, string> = {
 
 export function MyPage() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
   const [gender, setGender] = useState<string>("none");
   const [age, setAge] = useState<string>("");
   const [isEditing, setIsEditing] = useState(false);
@@ -45,10 +45,14 @@ export function MyPage() {
     if (isSaving) return;
     setIsSaving(true);
     try {
-      await api.updateMyProfile({
+      const updated = await api.updateMyProfile({
         gender: GENDER_FRONT_TO_API[gender] ?? "UNSPECIFIED",
         age: age ? Number(age) : null,
       });
+      // 응답이 새 user면 전역 state 갱신
+      if (updated && typeof updated === "object" && "id" in updated) {
+        setUser(updated as typeof user);
+      }
       setIsEditing(false);
     } catch (error) {
       console.error("프로필 저장 실패", error);
