@@ -44,6 +44,31 @@ export type Me = {
   age: number | null;
 };
 
+export type LlmResult = {
+  id: string;
+  sessionId: string;
+  mode: string;
+  resultText: string;
+  sections: {
+    facts: { a: string; b: string; self: string };
+    interpretations: { a: string; b: string; self: string };
+    emotions: { a: string; b: string; self: string };
+    needs: { a: string; b: string; self: string };
+    questions: string[];
+  };
+  diagramKeywords: {
+    coreConflict: string[];
+    facts: string[];
+    interpretations: string[];
+    emotions: string[];
+    needs: string[];
+    relationshipShift: string[];
+    questions: string[];
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
 export class ApiError extends Error {
   status: number;
   code?: string;
@@ -124,5 +149,15 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(input),
     });
+  },
+
+  generateLlmAnalysis(sessionId: string) {
+    return request<LlmResult>(`/llm/sessions/${sessionId}/analysis`, {
+      method: "POST",
+    });
+  },
+
+  getLlmAnalysis(sessionId: string) {
+    return request<LlmResult>(`/llm/sessions/${sessionId}/analysis`);
   },
 };

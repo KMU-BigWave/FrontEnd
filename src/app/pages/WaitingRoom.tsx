@@ -39,7 +39,7 @@ export function WaitingRoom() {
       if (data.personA && data.personB) {
         sessionStorage.setItem(
           "analysisData",
-          JSON.stringify({ mode: "two-person", personA: data.personA, personB: data.personB })
+          JSON.stringify({ mode: "two-person", sessionId: roomId, personA: data.personA, personB: data.personB })
         );
         setReadyToGo(true);
         setTimeout(() => navigate("/analysis"), 1000);
@@ -88,7 +88,7 @@ export function WaitingRoom() {
     localStorage.setItem(`room_${roomId}`, JSON.stringify(data));
     sessionStorage.setItem(
       "analysisData",
-      JSON.stringify({ mode: "two-person", personA: data.personA, personB: data.personB })
+      JSON.stringify({ mode: "two-person", sessionId: roomId, personA: data.personA, personB: data.personB })
     );
     navigate("/analysis");
   };

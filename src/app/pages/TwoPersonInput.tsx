@@ -94,7 +94,7 @@ export function TwoPersonInput() {
     if (roomData.personB) {
       roomData.status = "ready";
       localStorage.setItem(`room_${roomId}`, JSON.stringify(roomData));
-      sessionStorage.setItem("analysisData", JSON.stringify({ mode: "two-person", personA: roomData.personA, personB: roomData.personB }));
+      sessionStorage.setItem("analysisData", JSON.stringify({ mode: "two-person", sessionId: roomId, personA: roomData.personA, personB: roomData.personB }));
       navigate("/analysis");
     } else {
       roomData.status = "waiting-b";
