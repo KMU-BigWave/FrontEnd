@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import {
@@ -176,27 +176,6 @@ function VennCard({ catData, cat, data, pick, sel }: {
   pick: (item: KeywordItem, rect: DOMRect) => void;
   sel: SelectedNode | null;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [cW, setCW] = useState(250);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(([e]) => setCW(Math.round(e.contentRect.width)));
-    ro.observe(el);
-    setCW(Math.round(el.getBoundingClientRect().width));
-    return () => ro.disconnect();
-  }, []);
-
-  // 3 : 2 : 3 — circleD = 5/8 * cW
-  const sideColW = Math.floor(cW * 3 / 8);
-  const centerW  = cW - 2 * sideColW;
-  const circleD  = sideColW + centerW;
-
-  // vennH = circleD + 12  →  circles always have exactly 6 px clear margin top & bottom
-  const vennH = circleD + 12;
-  const circleTop = 6;
-
   return (
     <TabsContent value={cat.id} className="mt-0 outline-none">
       <motion.div
@@ -215,8 +194,7 @@ function VennCard({ catData, cat, data, pick, sel }: {
         {/* ── Venn body: px-3 so circles stay large but have a little card-edge gap ── */}
         <div className="px-3 pt-3 pb-4">
 
-          {/* Name row — same width as containerRef, flex 3:2:3 */}
-          <div className="flex items-center mb-2">
+          <div className="flex items-center mb-2 mx-auto" style={{ maxWidth: 720 }}>
             <div className="flex-[3] flex justify-center">
               <span className="text-[11px] font-bold" style={{ color: "#f07090" }}>{data.me.name}</span>
             </div>
@@ -228,15 +206,16 @@ function VennCard({ catData, cat, data, pick, sel }: {
             </div>
           </div>
 
-          {/* Venn area — no max-w, fills card minus 24px (px-3 × 2).
-              circleD = 5/8 * cW so circles are always large enough.
-              vennH = circleD + 24 gives 12px breathing room top & bottom. */}
-          <div ref={containerRef} className="relative w-full" style={{ height: vennH }}>
+          <div
+            className="relative w-full mx-auto"
+            style={{ maxWidth: 720, aspectRatio: "8 / 5", containerType: "inline-size" }}
+          >
 
             {/* Left circle */}
             <div style={{
-              position: "absolute", left: 0, top: circleTop,
-              width: circleD, height: circleD, borderRadius: "50%",
+              position: "absolute", left: "0%", top: "50%",
+              width: "62.5%", aspectRatio: "1 / 1",
+              transform: "translateY(-50%)", borderRadius: "50%",
               border: "1.5px solid rgba(255,140,160,0.55)",
               background: "rgba(255,222,230,0.45)",
               pointerEvents: "none", zIndex: 0,
@@ -244,44 +223,47 @@ function VennCard({ catData, cat, data, pick, sel }: {
 
             {/* Right circle */}
             <div style={{
-              position: "absolute", right: 0, top: circleTop,
-              width: circleD, height: circleD, borderRadius: "50%",
+              position: "absolute", right: "0%", top: "50%",
+              width: "62.5%", aspectRatio: "1 / 1",
+              transform: "translateY(-50%)", borderRadius: "50%",
               border: "1.5px solid rgba(110,120,255,0.55)",
               background: "rgba(210,215,255,0.45)",
               pointerEvents: "none", zIndex: 0,
             }} />
 
-            {/* Keyword columns — 6px clear of top/bottom matching circle margin */}
-            <div className="absolute inset-0 flex items-center z-10"
+            <div className="absolute inset-0 flex items-stretch z-10"
                  style={{ paddingTop: 6, paddingBottom: 6 }}>
 
               {/* Left — me only */}
-              <div className="flex flex-col items-center justify-center gap-2 self-stretch"
-                   style={{ width: sideColW, paddingInline: "8px 5px" }}>
+              <div className="flex-[3] flex flex-col items-center justify-center gap-2"
+                   style={{ paddingInline: "8px 5px" }}>
                 {catData.meOnly.map((item, i) => (
                   <KwBtn key={`me-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-pink-200 rounded-xl text-[11.5px] font-medium text-[#222] text-center break-keep leading-snug hover:border-pink-400 hover:bg-pink-50/40 transition-colors" />
+                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-pink-200 rounded-xl font-medium text-[#222] text-center break-keep leading-snug hover:border-pink-400 hover:bg-pink-50/40 transition-colors"
+                    style={{ fontSize: "calc(0.532cqw + 7.667px)" }} />
                 ))}
               </div>
 
               {/* Center — shared */}
-              <div className="flex flex-col items-center justify-center gap-2 self-stretch"
-                   style={{ width: centerW, paddingInline: "3px" }}>
+              <div className="flex-[2] flex flex-col items-center justify-center gap-2"
+                   style={{ paddingInline: "3px" }}>
                 {catData.shared.length === 0 ? (
-                  <span className="text-[9px] text-[#D1D1D6] text-center leading-snug">공통<br/>없음</span>
+                  <span className="text-[#D1D1D6] text-center leading-snug"
+                    style={{ fontSize: "calc(0.417cqw + 6px)" }}>공통<br/>없음</span>
                 ) : catData.shared.map((item, i) => (
                   <KwBtn key={`sh-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2 py-1.5 rounded-xl text-[10px] font-bold text-white text-center break-keep leading-snug hover:opacity-80 transition-opacity"
-                    style={{ backgroundColor: cat.color }} />
+                    className="w-fit max-w-full px-2 py-1.5 rounded-xl font-bold text-white text-center break-keep leading-snug hover:opacity-80 transition-opacity"
+                    style={{ backgroundColor: cat.color, fontSize: "calc(0.463cqw + 6.667px)" }} />
                 ))}
               </div>
 
               {/* Right — partner only */}
-              <div className="flex flex-col items-center justify-center gap-2 self-stretch"
-                   style={{ width: sideColW, paddingInline: "5px 8px" }}>
+              <div className="flex-[3] flex flex-col items-center justify-center gap-2"
+                   style={{ paddingInline: "5px 8px" }}>
                 {catData.partnerOnly.map((item, i) => (
                   <KwBtn key={`pt-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xl text-[11.5px] font-medium text-[#222] text-center break-keep leading-snug hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors" />
+                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xl font-medium text-[#222] text-center break-keep leading-snug hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors"
+                    style={{ fontSize: "calc(0.532cqw + 7.667px)" }} />
                 ))}
               </div>
             </div>
@@ -414,7 +396,7 @@ export function DashboardPage() {
         <div className="w-8" />
       </header>
 
-      <div className="flex-1 overflow-y-auto pb-12">
+      <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1200px] mx-auto">
         {/* Title */}
         <div className="px-5 pt-6 pb-5 bg-white border-b border-[#EBEBF0]">
           <div className="flex items-center gap-2 mb-2.5">

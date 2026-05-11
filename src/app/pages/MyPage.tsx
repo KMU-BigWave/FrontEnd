@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, LogOut, Camera } from "lucide-react";
 import { motion } from "motion/react";
+import { useAuth } from "../utils/authContext";
+import { api } from "../utils/api";
 
 const GENDER_OPTIONS = [
   { value: "male", label: "남성" },
@@ -9,18 +11,60 @@ const GENDER_OPTIONS = [
   { value: "none", label: "선택 안 함" },
 ];
 
+// 백엔드 성별 enum (M/F/OTHER/UNSPECIFIED) ↔ 프론트 (male/female/none) 매핑
+const GENDER_API_TO_FRONT: Record<string, string> = {
+  M: "male",
+  F: "female",
+  OTHER: "none",
+  UNSPECIFIED: "none",
+};
+
+const GENDER_FRONT_TO_API: Record<string, string> = {
+  male: "M",
+  female: "F",
+  none: "UNSPECIFIED",
+};
+
 export function MyPage() {
   const navigate = useNavigate();
-  const [gender, setGender] = useState<string>("male");
-  const [age, setAge] = useState<string>("28");
+  const { user, logout, setUser } = useAuth();
+  const [gender, setGender] = useState<string>("none");
+  const [age, setAge] = useState<string>("");
   const [isEditing, setIsEditing] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Mock Google login info
-  const user = {
-    name: "김민수",
-    email: "minsu.kim@gmail.com",
-    photoInitial: "김",
+  // user 데이터 로드되면 성별/나이 동기화
+  useEffect(() => {
+    if (user) {
+      setGender(user.gender ? GENDER_API_TO_FRONT[user.gender] ?? "none" : "none");
+      setAge(user.age != null ? String(user.age) : "");
+    }
+  }, [user]);
+
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const updated = await api.updateMyProfile({
+        gender: GENDER_FRONT_TO_API[gender] ?? "UNSPECIFIED",
+        age: age ? Number(age) : null,
+      });
+      // 응답이 새 user면 전역 state 갱신
+      if (updated && typeof updated === "object" && "id" in updated) {
+        setUser(updated as typeof user);
+      }
+      setIsEditing(false);
+    } catch (error) {
+      console.error("프로필 저장 실패", error);
+      alert("프로필 저장에 실패했어요.");
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const displayName = user?.name ?? "게스트";
+  const displayEmail = user?.email ?? "로그인 정보 없음";
+  const photoInitial = displayName.charAt(0).toUpperCase();
 
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
@@ -35,10 +79,11 @@ export function MyPage() {
           </button>
           <span className="text-[15px] font-bold text-[#1C1C1E] tracking-tight">마이 페이지</span>
           <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="text-[13px] font-semibold text-[#c9485b] hover:opacity-70 transition-opacity"
+            onClick={() => (isEditing ? handleSave() : setIsEditing(true))}
+            disabled={isSaving}
+            className="text-[13px] font-semibold text-[#c9485b] hover:opacity-70 transition-opacity disabled:opacity-50"
           >
-            {isEditing ? "완료" : "편집"}
+            {isEditing ? (isSaving ? "저장 중..." : "완료") : "편집"}
           </button>
         </div>
       </header>
@@ -54,7 +99,11 @@ export function MyPage() {
             <div className="relative mb-4">
               <div className="w-20 h-20 rounded-full bg-gradient-to-br from-[#ffd1da] to-[#ffb3c4] flex items-center justify-center"
                 style={{ boxShadow: "rgba(255,145,168,0.3) 0 4px 12px 0" }}>
-                <span className="text-[#c9485b] text-[28px] font-bold">{user.photoInitial}</span>
+                {user?.picture_url ? (
+                  <img src={user.picture_url} alt="" className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  <span className="text-[#c9485b] text-[28px] font-bold">{photoInitial}</span>
+                )}
               </div>
               {isEditing && (
                 <button className="absolute -bottom-1 -right-1 w-7 h-7 bg-white border border-[#E5E5EA] rounded-full flex items-center justify-center shadow-sm hover:bg-[#F5F5F7] transition-colors">
@@ -62,8 +111,8 @@ export function MyPage() {
                 </button>
               )}
             </div>
-            <p className="text-[19px] font-bold text-[#1C1C1E] tracking-tight">{user.name}</p>
-            <p className="text-[13px] text-[#AEAEB2] mt-0.5">{user.email}</p>
+            <p className="text-[19px] font-bold text-[#1C1C1E] tracking-tight">{displayName}</p>
+            <p className="text-[13px] text-[#AEAEB2] mt-0.5">{displayEmail}</p>
 
             {/* Google badge */}
             <div className="mt-3 flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#E5E5EA] rounded-full shadow-sm">
@@ -83,13 +132,13 @@ export function MyPage() {
               <p className="text-[11.5px] font-semibold text-[#AEAEB2] uppercase tracking-wider mb-3">계정 정보</p>
               <div className="flex items-center justify-between">
                 <span className="text-[14px] text-[#636366]">이름</span>
-                <span className="text-[14px] font-semibold text-[#1C1C1E]">{user.name}</span>
+                <span className="text-[14px] font-semibold text-[#1C1C1E]">{displayName}</span>
               </div>
             </div>
             <div className="px-5 py-4">
               <div className="flex items-center justify-between">
                 <span className="text-[14px] text-[#636366]">이메일</span>
-                <span className="text-[13px] font-medium text-[#636366]">{user.email}</span>
+                <span className="text-[13px] font-medium text-[#636366]">{displayEmail}</span>
               </div>
             </div>
           </div>
@@ -146,7 +195,7 @@ export function MyPage() {
                     <span className="text-[13px] text-[#636366]">세</span>
                   </div>
                 ) : (
-                  <span className="text-[14px] font-semibold text-[#1C1C1E]">{age}세</span>
+                  <span className="text-[14px] font-semibold text-[#1C1C1E]">{age ? `${age}세` : "-"}</span>
                 )}
               </div>
             </div>
@@ -154,7 +203,10 @@ export function MyPage() {
 
           {/* Logout */}
           <button
-            onClick={() => navigate("/")}
+            onClick={() => {
+              logout();
+              navigate("/");
+            }}
             className="w-full flex items-center justify-center gap-2 py-3.5 bg-white border border-[#E5E5EA] rounded-2xl text-[14px] font-semibold text-[#FF3B30] hover:bg-[#FFF5F5] transition-colors"
           >
             <LogOut size={16} strokeWidth={2} />

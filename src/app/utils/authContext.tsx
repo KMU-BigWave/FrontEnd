@@ -1,17 +1,15 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { API_BASE_URL, api, type Me } from './api';
 
-export interface User {
-  id: string;
-  name: string;
-  email: string;
-  avatar: string;
-}
+export type User = Me;
 
 interface AuthContextType {
-  user: User | null;
+  user: Me | null;
   login: () => void;
   logout: () => void;
   isLoading: boolean;
+  setUser: (user: Me | null) => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,39 +17,40 @@ const AuthContext = createContext<AuthContextType>({
   login: () => {},
   logout: () => {},
   isLoading: true,
+  setUser: () => {},
+  refreshUser: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<Me | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem('cm_user');
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
-    setIsLoading(false);
+    api.getMe()
+      .then(setUser)
+      .catch(() => setUser(null))
+      .finally(() => setIsLoading(false));
   }, []);
 
   const login = () => {
-    // Mock Google login
-    const mockUser: User = {
-      id: 'u_' + Math.random().toString(36).slice(2, 8),
-      name: '김지우',
-      email: 'jiwoo.kim@gmail.com',
-      avatar: '',
-    };
-    localStorage.setItem('cm_user', JSON.stringify(mockUser));
-    setUser(mockUser);
+    window.location.href = `${API_BASE_URL}/auth/google/login`;
   };
 
   const logout = () => {
-    localStorage.removeItem('cm_user');
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    try {
+      const me = await api.getMe();
+      setUser(me);
+    } catch {
+      setUser(null);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, login, logout, isLoading, setUser, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

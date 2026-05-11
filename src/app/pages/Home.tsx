@@ -1,19 +1,29 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { Plus, ChevronRight, Calendar, ChevronLeft, Link as LinkIcon, Users, Sparkles, ArrowRight, Brain, User, MessageSquare } from "lucide-react";
+import { Plus, ChevronRight, Calendar, ChevronLeft, Link as LinkIcon, Users, Sparkles, ArrowRight, Brain, User as UserIcon, MessageSquare } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { useAuth } from "../utils/authContext";
+
+const TUTORIAL_SEEN_KEY = "tigyeok_home_tutorial_seen";
 
 export function HomePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
 
   useEffect(() => {
-    setShowTutorial(true);
+    if (localStorage.getItem(TUTORIAL_SEEN_KEY) !== "true") {
+      setShowTutorial(true);
+    }
   }, []);
 
   const TOTAL_STEPS = 5;
-  const completeTutorial = () => setShowTutorial(false);
+  const completeTutorial = () => {
+    localStorage.setItem(TUTORIAL_SEEN_KEY, "true");
+    setShowTutorial(false);
+    setTutorialStep(0);
+  };
   const nextStep = () => {
     if (tutorialStep < TOTAL_STEPS - 1) setTutorialStep((prev) => prev + 1);
     else completeTutorial();
@@ -175,7 +185,10 @@ export function HomePage() {
           </span>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowTutorial(true)}
+              onClick={() => {
+                setTutorialStep(0);
+                setShowTutorial(true);
+              }}
               className="h-8 px-3 bg-[#f7f7f7] hover:bg-[#ebebeb] rounded-lg text-[12.5px] text-[#636366] font-medium transition-colors flex items-center gap-1.5"
             >
               <Sparkles size={13} className="text-[#c9485b]" />
@@ -185,7 +198,7 @@ export function HomePage() {
               onClick={() => navigate("/mypage")}
               className="w-8 h-8 bg-[#F5F5F7] hover:bg-[#EBEBF0] rounded-lg flex items-center justify-center text-[#636366] transition-colors"
             >
-              <User size={16} strokeWidth={2} />
+              <UserIcon size={16} strokeWidth={2} />
             </button>
           </div>
         </div>
@@ -197,7 +210,7 @@ export function HomePage() {
         <div className="mb-6">
           <p className="text-[12.5px] text-[#AEAEB2] mb-0.5 font-medium">환영합니다</p>
           <p className="text-[22px] font-bold text-[#1C1C1E] tracking-tight leading-tight">
-            김민수
+            {user?.name ?? "게스트"}
             <span className="text-[#AEAEB2] font-medium text-[18px]"> 님</span>
           </p>
         </div>
@@ -237,7 +250,7 @@ export function HomePage() {
           >
             <div className="flex items-center justify-between mb-4">
               <div className="w-10 h-10 bg-[#fff5f7] rounded-xl flex items-center justify-center">
-                <User size={19} className="text-[#c9485b]" />
+                <UserIcon size={19} className="text-[#c9485b]" />
               </div>
               <div className="w-8 h-8 bg-[#F5F5F7] group-hover:bg-[#fff0f3] rounded-xl flex items-center justify-center transition-colors">
                 <Plus size={17} className="text-[#c9485b]" strokeWidth={2.5} />

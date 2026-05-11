@@ -1,14 +1,23 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router";
 import { motion } from "motion/react";
 import { Copy, Check, Link as LinkIcon, ArrowLeft } from "lucide-react";
+import { api, type RelationshipType } from "../utils/api";
 
 const MAX_CHARS = 30000;
 const RELATIONSHIP_TYPES = ["연인", "부부", "친구", "가족", "직장 동료", "룸메이트", "기타"];
 const DANGER_KEYWORDS = ["자해", "자살", "죽고 싶", "죽고싶", "폭행", "폭력", "살인", "죽이고", "때리", "죽여", "자살하", "자해하", "칼로 찌", "스스로 목숨"];
 function hasDanger(text: string) { return DANGER_KEYWORDS.some((kw) => text.includes(kw)); }
 
-function generateRoomId() { return Math.random().toString(36).substring(2, 10); }
+const RELATIONSHIP_TYPE_MAP: Record<string, RelationshipType> = {
+  연인: "COUPLE",
+  부부: "COUPLE",
+  친구: "FRIEND",
+  가족: "FAMILY",
+  "직장 동료": "TEAM",
+  룸메이트: "ROOMMATE",
+  기타: "OTHER",
+};
 
 export function TwoPersonInput() {
   const navigate = useNavigate();
@@ -19,14 +28,36 @@ export function TwoPersonInput() {
   const [customRelationship, setCustomRelationship] = useState("");
   const [text, setText] = useState("");
   const [copied, setCopied] = useState(false);
+  const [roomId, setRoomId] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const roomId = useMemo(() => generateRoomId(), []);
-  const inviteLink = `${window.location.origin}/invite/${roomId}`;
+  const inviteLink = roomId ? `${window.location.origin}/invite/${roomId}` : "";
 
-  const handleCreateRoom = () => {
-    if (!nickname.trim() || pin.length !== 4) return;
-    localStorage.setItem(`room_${roomId}`, JSON.stringify({ createdBy: nickname.trim(), pin, personA: null, personB: null, status: "waiting" }));
-    setStep("write");
+  const handleCreateRoom = async () => {
+    if (!nickname.trim() || pin.length !== 4 || isCreating) return;
+    const relationshipType = RELATIONSHIP_TYPE_MAP[relationship] ?? "OTHER";
+    setIsCreating(true);
+    try {
+      const session = await api.createSession({ relationshipType, mode: "DUAL", roomPassword: pin });
+      const id = session.id;
+      localStorage.setItem(`room_${id}`, JSON.stringify({
+        createdBy: nickname.trim(),
+        pin,
+        personA: null,
+        personB: null,
+        status: "waiting",
+        relationship: relationship === "기타" ? customRelationship.trim() : relationship,
+        relationshipType,
+      }));
+      setRoomId(id);
+      setStep("write");
+    } catch (error) {
+      console.error("세션 생성 실패", error);
+      alert("세션 생성에 실패했어요. 백엔드 서버 실행과 로그인 상태를 확인해주세요.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const handleCopy = async () => {
@@ -38,9 +69,26 @@ export function TwoPersonInput() {
     setCopied(true); setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSubmit = () => {
-    if (!text.trim()) return;
+  const handleSubmit = async () => {
+    if (!text.trim() || !roomId || isSubmitting) return;
     if (hasDanger(text)) { navigate("/safety"); return; }
+    setIsSubmitting(true);
+
+    try {
+      await api.submitInput(roomId, text.trim());
+    } catch (error) {
+      const apiError = error as { code?: string; message?: string };
+      // 백엔드 모더레이션이 위험 콘텐츠로 차단한 경우
+      if (apiError.code === "INPUT_BLOCKED") {
+        navigate("/safety");
+        return;
+      }
+      console.error("입력 저장 실패", error);
+      alert(apiError.message ?? "입력 저장에 실패했어요.");
+      setIsSubmitting(false);
+      return;
+    }
+
     const roomData = JSON.parse(localStorage.getItem(`room_${roomId}`) || "{}");
     roomData.personA = { name: nickname.trim(), text: text.trim() };
     if (roomData.personB) {
@@ -53,6 +101,7 @@ export function TwoPersonInput() {
       localStorage.setItem(`room_${roomId}`, JSON.stringify(roomData));
       navigate(`/waiting/${roomId}`);
     }
+    setIsSubmitting(false);
   };
 
   /* ── Step: Create Room ── */
@@ -89,9 +138,9 @@ export function TwoPersonInput() {
                   className="w-full h-12 px-4 bg-white border border-[#dddddd] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#ffd1da]/40 focus:border-[#ffd1da] tracking-[0.5em] text-center transition-all text-[#222222] placeholder:text-[#929292]"
                   placeholder="• • • •" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, "").slice(0, 4))} maxLength={4} />
               </div>
-              <button disabled={!nickname.trim() || pin.length !== 4} onClick={handleCreateRoom}
+              <button disabled={!nickname.trim() || pin.length !== 4 || isCreating} onClick={handleCreateRoom}
                 className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl hover:bg-[#ffb3c4] disabled:bg-[#F0F0F5] disabled:text-[#C7C7CC] active:scale-[0.98] transition-all font-semibold">
-                초대 링크 만들기
+                {isCreating ? "생성 중..." : "초대 링크 만들기"}
               </button>
             </div>
           </motion.div>
@@ -179,9 +228,9 @@ export function TwoPersonInput() {
             </div>
           </div>
 
-          <button disabled={!text.trim()} onClick={handleSubmit}
+          <button disabled={!text.trim() || isSubmitting} onClick={handleSubmit}
             className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl hover:bg-[#ffb3c4] disabled:bg-[#F0F0F5] disabled:text-[#C7C7CC] active:scale-[0.98] transition-all font-semibold">
-            작성 완료
+            {isSubmitting ? "저장 중..." : "작성 완료"}
           </button>
         </motion.div>
       </main>
