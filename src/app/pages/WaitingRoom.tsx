@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
 import { Copy, Check } from "lucide-react";
+import { api } from "../utils/api";
 
 const STEPS_A = [
   { emoji: "✅", text: "내 입장 작성 완료" },
@@ -24,34 +25,55 @@ export function WaitingRoom() {
   const [personADone, setPersonADone] = useState(false);
   const [personBDone, setPersonBDone] = useState(false);
   const [readyToGo, setReadyToGo] = useState(false);
+  const [analysisFailed, setAnalysisFailed] = useState(false);
 
   const role = searchParams.get("role") || "A";
   const steps = role === "A" ? STEPS_A : STEPS_B;
   const inviteLink = `${window.location.origin}/invite/${roomId}`;
 
-  /* poll localStorage for partner completion */
+  /* poll backend for partner completion */
   useEffect(() => {
-    const check = () => {
-      if (!roomId) return false;
-      const data = JSON.parse(localStorage.getItem(`room_${roomId}`) || "{}");
-      setPersonADone(!!data.personA);
-      setPersonBDone(!!data.personB);
-      if (data.personA && data.personB) {
-        sessionStorage.setItem(
-          "analysisData",
-          JSON.stringify({ mode: "two-person", sessionId: roomId, personA: data.personA, personB: data.personB })
-        );
-        setReadyToGo(true);
-        setTimeout(() => navigate("/analysis"), 1000);
-        return true;
+    if (!roomId) return;
+
+    const check = async () => {
+      try {
+        const status = await api.getSessionStatus(roomId);
+        setPersonADone(status.myRole === "B" ? true : status.myRole === "A" && true);
+        setPersonBDone(status.bothSubmitted);
+
+        // role A는 항상 본인이 제출 완료한 상태로 WaitingRoom에 옴
+        // role B도 마찬가지 → 본인은 항상 done
+        setPersonADone(true);
+        setPersonBDone(status.bothSubmitted);
+
+        if (status.bothSubmitted && status.status === "DONE") {
+          // 기존 analysisData에 sessionId 보장
+          const existing = JSON.parse(sessionStorage.getItem("analysisData") || "{}");
+          sessionStorage.setItem("analysisData", JSON.stringify({
+            ...existing,
+            mode: "two-person",
+            sessionId: roomId,
+          }));
+          setReadyToGo(true);
+          setTimeout(() => navigate("/analysis"), 1000);
+          return true;
+        }
+        if (status.bothSubmitted && status.status === "FAILED") {
+          setAnalysisFailed(true);
+          return true;
+        }
+      } catch (e) {
+        console.error("세션 상태 확인 실패", e);
       }
       return false;
     };
 
-    if (!check()) {
-      const iv = setInterval(() => { if (check()) clearInterval(iv); }, 1500);
-      return () => clearInterval(iv);
-    }
+    check().then((done) => {
+      if (!done) {
+        const iv = setInterval(() => check().then((d) => { if (d) clearInterval(iv); }), 2000);
+        return () => clearInterval(iv);
+      }
+    });
   }, [roomId, navigate]);
 
   /* step cycle — only while waiting */
@@ -81,19 +103,34 @@ export function WaitingRoom() {
 
   const handleDemoSkip = () => {
     if (!roomId) return;
-    const data = JSON.parse(localStorage.getItem(`room_${roomId}`) || "{}");
-    if (!data.personA) data.personA = { name: "사용자 A", text: "어제 약속 시간에 30분 늦게 도착했다." };
-    if (!data.personB) data.personB = { name: "사용자 B", text: "회의가 길어져서 약속에 늦었다." };
-    data.status = "ready";
-    localStorage.setItem(`room_${roomId}`, JSON.stringify(data));
-    sessionStorage.setItem(
-      "analysisData",
-      JSON.stringify({ mode: "two-person", sessionId: roomId, personA: data.personA, personB: data.personB })
-    );
+    const existing = JSON.parse(sessionStorage.getItem("analysisData") || "{}");
+    sessionStorage.setItem("analysisData", JSON.stringify({
+      ...existing,
+      mode: "two-person",
+      sessionId: roomId,
+    }));
     navigate("/analysis");
   };
 
   const progress = ((currentStep + 1) / steps.length) * 100;
+
+  if (analysisFailed) {
+    return (
+      <div className="min-h-screen bg-[#f7f7f7] flex flex-col items-center justify-center px-6">
+        <div className="max-w-[320px] w-full text-center">
+          <div className="w-16 h-16 bg-[#fff5f7] rounded-2xl flex items-center justify-center mx-auto mb-6 text-3xl">⚠️</div>
+          <p className="text-[18px] font-bold text-[#222222] mb-2">분석 중 오류가 발생했어요</p>
+          <p className="text-[13px] text-[#636366] mb-8 leading-relaxed">모델 분석에 실패했습니다.<br/>새 대화를 시작해 다시 시도해주세요.</p>
+          <button
+            onClick={() => navigate("/home")}
+            className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl font-semibold hover:bg-[#ffb3c4] transition-colors"
+          >
+            홈으로 돌아가기
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f7f7f7] flex flex-col items-center justify-center px-6">

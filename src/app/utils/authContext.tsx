@@ -27,7 +27,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     api.getMe()
-      .then(setUser)
+      .then((me) => {
+        setUser(me);
+        const pendingInvite = localStorage.getItem("pendingInvite");
+        if (pendingInvite) {
+          localStorage.removeItem("pendingInvite");
+          window.location.replace(pendingInvite);
+        }
+      })
       .catch(() => setUser(null))
       .finally(() => setIsLoading(false));
   }, []);

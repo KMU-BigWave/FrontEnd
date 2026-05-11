@@ -8,15 +8,19 @@ const TUTORIAL_SEEN_KEY = "tigyeok_home_tutorial_seen";
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
 
   useEffect(() => {
+    // 인증 로딩 완료 후에만 실행
+    if (isLoading) return;
+
+    // 로그인 후 초대 링크로 복귀
     if (localStorage.getItem(TUTORIAL_SEEN_KEY) !== "true") {
       setShowTutorial(true);
     }
-  }, []);
+  }, [isLoading, navigate]);
 
   const TOTAL_STEPS = 5;
   const completeTutorial = () => {

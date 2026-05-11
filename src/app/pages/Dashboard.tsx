@@ -470,19 +470,30 @@ export function DashboardPage() {
       try { setRelationship(JSON.parse(roomRaw).relationship ?? ""); } catch { /* ignore */ }
     }
 
-    // GET 먼저 시도 → 없으면 POST로 생성
-    api.getLlmAnalysis(sessionId)
-      .then((result) => { setLlmResult(result); setIsLoading(false); })
-      .catch((err: ApiError) => {
-        if (err.code === "LLM_RESULT_NOT_FOUND") {
-          api.generateLlmAnalysis(sessionId)
-            .then((result) => { setLlmResult(result); setIsLoading(false); })
-            .catch((genErr: ApiError) => { setErrorMsg(genErr.message ?? "LLM 분석 생성에 실패했습니다."); setIsLoading(false); });
-        } else {
-          setErrorMsg(err.message ?? "분석 결과를 불러오지 못했습니다.");
-          setIsLoading(false);
-        }
-      });
+    // GET 먼저 시도 → 없으면 POST로 생성, ANALYSIS_NOT_READY면 재시도
+    const tryLoad = (retryCount = 0) => {
+      api.getLlmAnalysis(sessionId)
+        .then((result) => { setLlmResult(result); setIsLoading(false); })
+        .catch((err: ApiError) => {
+          if (err.code === "LLM_RESULT_NOT_FOUND") {
+            api.generateLlmAnalysis(sessionId)
+              .then((result) => { setLlmResult(result); setIsLoading(false); })
+              .catch((genErr: ApiError) => {
+                if (genErr.code === "ANALYSIS_NOT_READY" && retryCount < 10) {
+                  // 모델 분석 아직 진행 중 → 2초 후 재시도
+                  setTimeout(() => tryLoad(retryCount + 1), 2000);
+                } else {
+                  setErrorMsg(genErr.message ?? "LLM 분석 생성에 실패했습니다.");
+                  setIsLoading(false);
+                }
+              });
+          } else {
+            setErrorMsg(err.message ?? "분석 결과를 불러오지 못했습니다.");
+            setIsLoading(false);
+          }
+        });
+    };
+    tryLoad();
   }, []);
 
   const header = (

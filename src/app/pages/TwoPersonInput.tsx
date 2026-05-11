@@ -91,16 +91,15 @@ export function TwoPersonInput() {
 
     const roomData = JSON.parse(localStorage.getItem(`room_${roomId}`) || "{}");
     roomData.personA = { name: nickname.trim(), text: text.trim() };
-    if (roomData.personB) {
-      roomData.status = "ready";
-      localStorage.setItem(`room_${roomId}`, JSON.stringify(roomData));
-      sessionStorage.setItem("analysisData", JSON.stringify({ mode: "two-person", sessionId: roomId, personA: roomData.personA, personB: roomData.personB }));
-      navigate("/analysis");
-    } else {
-      roomData.status = "waiting-b";
-      localStorage.setItem(`room_${roomId}`, JSON.stringify(roomData));
-      navigate(`/waiting/${roomId}`);
-    }
+    roomData.status = "waiting-b";
+    localStorage.setItem(`room_${roomId}`, JSON.stringify(roomData));
+    // sessionId + personA 이름 저장 (대시보드 표시용)
+    sessionStorage.setItem("analysisData", JSON.stringify({
+      mode: "two-person",
+      sessionId: roomId,
+      personA: { name: nickname.trim() },
+    }));
+    navigate(`/waiting/${roomId}?role=A`);
     setIsSubmitting(false);
   };
 

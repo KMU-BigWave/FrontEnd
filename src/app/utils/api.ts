@@ -151,6 +151,12 @@ export const api = {
     });
   },
 
+  getSessionStatus(sessionId: string) {
+    return request<{ sessionId: string; status: string; myRole: string; bothSubmitted: boolean }>(
+      `/sessions/${sessionId}/status`
+    );
+  },
+
   generateLlmAnalysis(sessionId: string) {
     return request<LlmResult>(`/llm/sessions/${sessionId}/analysis`, {
       method: "POST",

@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { RouterProvider } from "react-router";
 import { router } from "./routes";
+import { AuthProvider } from "./utils/authContext";
 
 function GlobalFallback() {
   return (
@@ -45,8 +46,10 @@ function GlobalFallback() {
 
 export default function App() {
   return (
-    <Suspense fallback={<GlobalFallback />}>
-      <RouterProvider router={router} fallbackElement={<GlobalFallback />} />
-    </Suspense>
+    <AuthProvider>
+      <Suspense fallback={<GlobalFallback />}>
+        <RouterProvider router={router} fallbackElement={<GlobalFallback />} />
+      </Suspense>
+    </AuthProvider>
   );
 }
