@@ -25,7 +25,12 @@ import {
   type LlmEvidenceResult,
 } from "../utils/api";
 
-interface KeywordItem { text: string; sourceText: string; confidence: number; }
+interface KeywordItem {
+  text: string;
+  sourceText: string;
+  confidence: number;
+  sourceKind: "input" | "analysis";
+}
 interface SelectedNode extends KeywordItem { rect: DOMRect; }
 
 const DASHBOARD_DATA_TEMPLATE = {
@@ -81,13 +86,14 @@ const DASHBOARD_DATA_TEMPLATE = {
 const CATEGORIES = [
   { id: "facts" as const, label: "사실", en: "Fact", icon: ListChecks, color: "#818CF8", bg: "#EEF2FF" },
   { id: "interpretations" as const, label: "해석", en: "Interpret", icon: BrainCircuit, color: "#F0A858", bg: "#FEF6E8" },
-  { id: "emotions" as const, label: "감정", en: "Feel", icon: HeartPulse, color: "#E88FA0", bg: "#FDF2F4" },
+  { id: "emotions" as const, label: "감정", en: "Emotion", icon: HeartPulse, color: "#E88FA0", bg: "#FDF2F4" },
   { id: "needs" as const, label: "요구", en: "Need", icon: Send, color: "#5BB89A", bg: "#E8F6F0" },
 ];
 
 type DashboardData = typeof DASHBOARD_DATA_TEMPLATE;
 type CategoryId = typeof CATEGORIES[number]["id"];
 type MindmapKey = keyof DashboardData["mindmap"];
+type KeywordEvidenceEntry = NonNullable<LlmEvidenceResult["keywordEvidence"][CategoryId]>[number];
 
 const MINDMAP_KEY_BY_CATEGORY: Record<CategoryId, MindmapKey> = {
   facts: "fact",
@@ -101,10 +107,11 @@ function shortenForChip(text: string, max = 14) {
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
 }
 
-function makeKeyword(text: string, sourceText = text): KeywordItem {
+function makeKeyword(text: string, sourceText = text, sourceKind: KeywordItem["sourceKind"] = "analysis"): KeywordItem {
   return {
     text: shortenForChip(text),
     sourceText,
+    sourceKind,
     confidence: 0,
   };
 }
@@ -112,7 +119,7 @@ function makeKeyword(text: string, sourceText = text): KeywordItem {
 function makeMindmapGroup(
   section: { a?: string; b?: string } | undefined,
   keywords: string[] | undefined,
-  sectionEvidence?: Array<{ keyword: string; evidence: Array<{ text: string; confidencePercent?: number | null }> }>,
+  sectionEvidence?: KeywordEvidenceEntry[],
 ) {
   const evidenceMap = new Map(
     (sectionEvidence ?? []).map(({ keyword, evidence }) => [keyword, evidence[0] ?? null])
@@ -123,14 +130,15 @@ function makeMindmapGroup(
     return {
       text: shortenForChip(text),
       sourceText: ev?.text ?? sourceText,
+      sourceKind: ev?.text ? "input" : "analysis",
       confidence: ev?.confidencePercent ?? 0,
     };
   };
 
   return {
     shared: (keywords ?? []).slice(0, 3).map((k) => makeKwWithEvidence(k)),
-    meOnly: section?.a ? [{ text: shortenForChip(section.a), sourceText: section.a, confidence: 0 }] : [],
-    partnerOnly: section?.b ? [{ text: shortenForChip(section.b), sourceText: section.b, confidence: 0 }] : [],
+    meOnly: section?.a ? [makeKeyword(section.a)] : [],
+    partnerOnly: section?.b ? [makeKeyword(section.b)] : [],
   };
 }
 
@@ -153,13 +161,18 @@ function buildMindmapData({
   const ev = evidenceResult?.keywordEvidence;
 
   const firstFact = diagramKeywords.facts[0] || sections.facts.a || sections.facts.b || "";
+  const factKeywordEvidence = ev?.facts?.find(({ keyword }) => keyword === firstFact)?.evidence[0] ?? null;
   const interpretationBranch =
     firstFact && (sections.interpretations.a || sections.interpretations.b)
       ? [{
           id: "api-interpretation",
-          fact: makeKeyword(firstFact, sections.facts.a || sections.facts.b || firstFact),
-          me: sections.interpretations.a ? [makeKeyword(sections.interpretations.a, sections.interpretations.a)] : [],
-          partner: sections.interpretations.b ? [makeKeyword(sections.interpretations.b, sections.interpretations.b)] : [],
+          fact: makeKeyword(
+            firstFact,
+            factKeywordEvidence?.text ?? sections.facts.a ?? sections.facts.b ?? firstFact,
+            factKeywordEvidence?.text ? "input" : "analysis",
+          ),
+          me: sections.interpretations.a ? [makeKeyword(sections.interpretations.a)] : [],
+          partner: sections.interpretations.b ? [makeKeyword(sections.interpretations.b)] : [],
         }]
       : [];
 
@@ -216,7 +229,9 @@ function FixedTooltip({ node, onClose }: { node: SelectedNode; onClose: () => vo
         <div className="flex items-center justify-between mb-2.5 pr-6">
           <div className="flex items-center gap-1.5">
             <Quote size={11} className="text-[#ffd1da]" strokeWidth={3} />
-            <p className="font-semibold text-[11.5px] text-white/70">입력된 원문</p>
+            <p className="font-semibold text-[11.5px] text-white/70">
+              {node.sourceKind === "input" ? "입력된 원문" : "AI 분석 문장"}
+            </p>
           </div>
           {node.confidence > 0 && (
             <div className="flex items-center gap-1 px-2 py-0.5 bg-[#ffd1da]/20 rounded-full">

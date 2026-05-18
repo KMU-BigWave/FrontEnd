@@ -40,7 +40,7 @@ interface SelectedNode extends KeywordItem {
 const CATEGORIES = [
   { id: "fact" as const, label: "사실", en: "Fact", icon: ListChecks, color: "#818CF8", bg: "#EEF2FF" },
   { id: "interpretation" as const, label: "해석", en: "Interpret", icon: BrainCircuit, color: "#F0A858", bg: "#FEF6E8" },
-  { id: "emotion" as const, label: "감정", en: "Feel", icon: HeartPulse, color: "#E88FA0", bg: "#FDF2F4" },
+  { id: "emotion" as const, label: "감정", en: "Emotion", icon: HeartPulse, color: "#E88FA0", bg: "#FDF2F4" },
   { id: "request" as const, label: "요구", en: "Need", icon: Send, color: "#5BB89A", bg: "#E8F6F0" },
 ];
 
