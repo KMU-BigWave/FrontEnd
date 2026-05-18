@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeft, Users, User, Trash2, Calendar, ChevronRight } from "lucide-react";
+import { ArrowLeft, Users, User, Trash2, Calendar, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import { api, type RelationshipType, type SessionMode, type LlmResult } from "../utils/api";
 
 interface HistoryItem {
   id: string;
@@ -9,69 +10,106 @@ interface HistoryItem {
   mode: "two-person" | "solo";
   title: string;
   summary: string;
-  personA?: string;
-  personB?: string;
+  status: string;
+  relationshipType: RelationshipType;
+  createdAt: string;
 }
 
-const MOCK_HISTORY: HistoryItem[] = [
-  {
-    id: "h1",
-    date: "2026.03.15",
-    mode: "two-person",
-    title: "약속 시간 지각 갈등",
-    summary: "약속 시간에 30분 늦은 것을 둘러싼 해석의 차이",
-    personA: "민수",
-    personB: "지영",
-  },
-  {
-    id: "h2",
-    date: "2026.03.10",
-    mode: "two-person",
-    title: "가사 분담 갈등",
-    summary: "가사 분담 비율에 대한 인식 차이",
-    personA: "나",
-    personB: "파트너",
-  },
-  {
-    id: "h3",
-    date: "2026.03.03",
-    mode: "solo",
-    title: "직장에서의 스트레스 정리",
-    summary: "팀장과의 소통 방식에 대한 내 감정 분석",
-  },
-  {
-    id: "h4",
-    date: "2026.02.22",
-    mode: "two-person",
-    title: "업무 커뮤니케이션 갈등",
-    summary: "답장 속도에 대한 기대치 차이",
-    personA: "사용자 A",
-    personB: "사용자 B",
-  },
-];
+const RELATIONSHIP_LABELS: Record<RelationshipType, string> = {
+  COUPLE: "연인/부부",
+  FRIEND: "친구",
+  FAMILY: "가족",
+  ROOMMATE: "룸메이트",
+  TEAM: "직장/팀",
+  OTHER: "기타",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  WAITING_INPUT: "입력 대기",
+  READY: "분석 준비",
+  ANALYZING: "분석 중",
+  DONE: "분석 완료",
+  FAILED: "분석 실패",
+  BLOCKED: "입력 차단",
+};
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date
+    .toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })
+    .replace(/\. /g, ".")
+    .replace(/\.$/, "");
+}
+
+function modeToUi(mode: SessionMode): HistoryItem["mode"] {
+  return mode === "SINGLE" ? "solo" : "two-person";
+}
 
 export function History() {
   const navigate = useNavigate();
   const [items, setItems] = useState<HistoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("cm_history");
-    if (stored) {
-      setItems(JSON.parse(stored));
-    } else {
-      setItems(MOCK_HISTORY);
-      localStorage.setItem("cm_history", JSON.stringify(MOCK_HISTORY));
-    }
+    let cancelled = false;
+
+    Promise.all([
+      api.getHistory(),
+      api.getSelfLlmResults().catch(() => null),
+    ])
+      .then(([historyResult, selfLlm]) => {
+        if (cancelled) return;
+
+        const llmBySession = new Map<string, LlmResult>();
+        if (selfLlm) {
+          for (const r of selfLlm.results) {
+            llmBySession.set(r.sessionId, r);
+          }
+        }
+
+        setItems(historyResult.items.map((item) => {
+          const mode = modeToUi(item.mode);
+          const relationship = RELATIONSHIP_LABELS[item.relationshipType] ?? "관계";
+          const status = STATUS_LABELS[item.status] ?? item.status;
+          const llm = mode === "solo" ? llmBySession.get(item.sessionId) : undefined;
+
+          const title = llm?.diagramKeywords.coreConflict[0]
+            ?? (mode === "solo" ? "생각 정리 기록" : `${relationship} 갈등 분석`);
+          const summary = llm?.resultText
+            ? llm.resultText.slice(0, 60) + (llm.resultText.length > 60 ? "…" : "")
+            : `${status} · ${relationship}`;
+
+          return {
+            id: item.sessionId,
+            date: formatDate(item.createdAt),
+            mode,
+            status: item.status,
+            relationshipType: item.relationshipType,
+            createdAt: item.createdAt,
+            title,
+            summary,
+          };
+        }));
+      })
+      .catch((error: { message?: string }) => {
+        if (!cancelled) setErrorMsg(error.message ?? "지난 대화 기록을 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, []);
 
+  // 서버 삭제 API 미지원: 화면 목록에서만 제거(새로고침 시 다시 표시됨)
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setDeletingId(id);
     setTimeout(() => {
-      const updated = items.filter((item) => item.id !== id);
-      setItems(updated);
-      localStorage.setItem("cm_history", JSON.stringify(updated));
+      setItems((prev) => prev.filter((item) => item.id !== id));
       setDeletingId(null);
     }, 300);
   };
@@ -82,19 +120,18 @@ export function History() {
         "analysisData",
         JSON.stringify({
           mode: "two-person",
-          personA: {
-            name: item.personA || "사용자 A",
-            text: "어제 약속 시간에 30분 늦게 도착했다. 미리 연락도 없었다. 나를 중요하게 생각하지 않는 것 같아서 화가 났다.",
-          },
-          personB: {
-            name: item.personB || "사용자 B",
-            text: "회의가 예상보다 길어져서 약속에 늦었다. 상대가 내 상황을 이해하지 못하는 것 같아서 답답했다.",
-          },
+          sessionId: item.id,
         })
       );
-      navigate("/analysis");
+      navigate(item.status === "DONE" ? "/analysis" : `/waiting/${item.id}`);
     } else {
-      navigate("/solo-analysis");
+      sessionStorage.setItem(
+        "soloData",
+        JSON.stringify({
+          sessionId: item.id,
+        })
+      );
+      navigate(item.status === "DONE" ? "/solo-analysis" : "/solo-loading");
     }
   };
 
@@ -114,7 +151,18 @@ export function History() {
       </header>
 
       <main className="mx-auto max-w-[480px] px-5 pb-12">
-        {items.length === 0 ? (
+        {isLoading ? (
+          <div className="text-center py-24">
+            <Loader2 className="w-8 h-8 text-[#c9485b] animate-spin mx-auto mb-4" />
+            <p className="text-[14px] font-semibold text-[#636366]">지난 기록을 불러오는 중이에요</p>
+          </div>
+        ) : errorMsg ? (
+          <div className="text-center py-24">
+            <AlertCircle className="w-9 h-9 text-[#c9485b] mx-auto mb-4" />
+            <p className="text-[15px] font-semibold text-[#222222] mb-1">기록을 불러올 수 없어요</p>
+            <p className="text-[13px] text-[#929292]">{errorMsg}</p>
+          </div>
+        ) : items.length === 0 ? (
           <motion.div
             className="text-center py-24"
             initial={{ opacity: 0 }}
@@ -171,16 +219,17 @@ export function History() {
                           <Calendar size={10} />
                           {item.date}
                         </div>
-                        {item.mode === "two-person" && item.personA && item.personB && (
-                          <span className="text-[10.5px] text-[#c9485b] font-medium">
-                            {item.personA} ↔ {item.personB}
-                          </span>
-                        )}
+                        <span className="text-[10.5px] text-[#c9485b] font-medium">
+                          {RELATIONSHIP_LABELS[item.relationshipType] ?? "관계"}
+                        </span>
                         {item.mode === "solo" && (
                           <span className="px-1.5 py-0.5 bg-[#fff5f7] text-[#c9485b] rounded-md text-[10px] font-semibold">
                             생각정리
                           </span>
                         )}
+                        <span className="px-1.5 py-0.5 bg-[#F5F5F7] text-[#636366] rounded-md text-[10px] font-semibold">
+                          {STATUS_LABELS[item.status] ?? item.status}
+                        </span>
                       </div>
                     </div>
 

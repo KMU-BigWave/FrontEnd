@@ -17,73 +17,47 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
-import { api, type LlmResult, type ApiError } from "../utils/api";
+import {
+  api,
+  type ApiError,
+  type LlmResult,
+  type DualAnalysisResult,
+  type LlmEvidenceResult,
+} from "../utils/api";
 
 interface KeywordItem { text: string; sourceText: string; confidence: number; }
 interface SelectedNode extends KeywordItem { rect: DOMRect; }
 
 const MOCK_DATA = {
-  title: "연락 빈도 문제",
-  date: "2026.03.28",
-  relationship: "연인",
-  me: { name: "민수" },
-  partner: { name: "지은" },
+  title: "",
+  date: "",
+  relationship: "",
+  me: { name: "A" },
+  partner: { name: "B" },
   mindmap: {
     fact: {
-      shared: [
-        { text: "밤 10시 이후 연락 두절", sourceText: "어제 밤 10시 넘어서 계속 전화를 안 받더라고요.", confidence: 92 },
-        { text: "약속 시간 변경 문제", sourceText: "주말 데이트 시간도 당일 아침에 갑자기 바꾸자고 했잖아요.", confidence: 88 },
-      ],
-      meOnly: [
-        { text: "3시간 동안 확인함", sourceText: "진짜 3시간 내내 카톡 확인하고 전화했는데 다 안 받았습니다.", confidence: 95 },
-        { text: "읽씹 상태", sourceText: "심지어 카톡 하나는 읽었으면서 답장도 안 했어요.", confidence: 91 },
-        { text: "전날에도 연락 지연", sourceText: "그제도 톡 답장이 2시간씩 걸렸어요.", confidence: 84 },
-      ],
-      partnerOnly: [
-        { text: "극도로 피곤한 상태", sourceText: "어제 야근하고 너무 피곤해서 씻자마자 기절했어요.", confidence: 93 },
-        { text: "알림을 못 봄", sourceText: "무음으로 해놔서 전화 온 줄도 몰랐어요.", confidence: 90 },
-        { text: "주말 출근 스트레스", sourceText: "주말에도 출근해야 해서 예민한 상태였어요.", confidence: 82 },
-      ],
+      shared: [] as KeywordItem[],
+      meOnly: [] as KeywordItem[],
+      partnerOnly: [] as KeywordItem[],
     },
     interpretation: { shared: [] as KeywordItem[], meOnly: [] as KeywordItem[], partnerOnly: [] as KeywordItem[] },
     emotion: {
-      shared: [{ text: "서로에 대한 미안함", sourceText: "어쨌든 이렇게 싸우게 된 건 서로 미안하죠.", confidence: 87 }],
-      meOnly: [
-        { text: "서운함", sourceText: "연락 한 통 없는 게 너무 서운했어요.", confidence: 96 },
-        { text: "불안", sourceText: "무슨 일 있는 건 아닌지 계속 불안했습니다.", confidence: 90 },
-        { text: "무시당하는 느낌", sourceText: "저를 완전히 무시하는 것 같아서 기분이 나빴어요.", confidence: 83 },
-      ],
-      partnerOnly: [
-        { text: "당황", sourceText: "아침에 일어나서 부재중 전화 보고 엄청 당황했어요.", confidence: 89 },
-        { text: "억울함", sourceText: "일부러 안 받은 것도 아닌데 화내니까 억울하더라고요.", confidence: 86 },
-      ],
+      shared: [] as KeywordItem[],
+      meOnly: [] as KeywordItem[],
+      partnerOnly: [] as KeywordItem[],
     },
     request: {
-      shared: [{ text: "배려하는 연락 습관", sourceText: "앞으로는 연락 문제로 스트레스 받지 않게 잘 조율했으면 좋겠어요.", confidence: 91 }],
-      meOnly: [{ text: "자기 전 인사 메시지", sourceText: "아무리 피곤해도 자기 전에는 꼭 연락 한 통 남겨줬으면 좋겠습니다.", confidence: 94 }],
-      partnerOnly: [{ text: "피곤할 때 여유", sourceText: "제가 너무 피곤해서 쓰러져 잘 때는 조금 이해해줬으면 해요.", confidence: 88 }],
+      shared: [] as KeywordItem[],
+      meOnly: [] as KeywordItem[],
+      partnerOnly: [] as KeywordItem[],
     },
   },
-  interpretationBranches: [
-    {
-      id: "fact-1",
-      fact: { text: "밤 10시 이후 연락 두절", sourceText: "어제 10시부터 갑자기 연락이 끊겼어요.", confidence: 92 },
-      me: [
-        { text: "나를 무시하는 것", sourceText: "바빠도 톡 하나 남길 수 있는데, 저를 중요하게 생각하지 않는 것 같았어요.", confidence: 85 },
-        { text: "우선순위에서 밀렸다", sourceText: "항상 저보다 일이나 다른 게 먼저인 것 같아요.", confidence: 79 },
-      ],
-      partner: [
-        { text: "이해해줄 거라 믿었다", sourceText: "오래 사귀었으니까 피곤해서 잤다고 하면 당연히 이해해줄 줄 알았어요.", confidence: 88 },
-        { text: "별일 아니라고 생각", sourceText: "그냥 하루 피곤해서 잔 건데 이렇게 크게 화낼 줄 몰랐습니다.", confidence: 83 },
-      ],
-    },
-    {
-      id: "fact-2",
-      fact: { text: "약속 시간 변경 문제", sourceText: "주말 데이트 시간도 당일 아침에 갑자기 바꾸자고 했잖아요.", confidence: 88 },
-      me: [{ text: "내 시간은 안 중요한가?", sourceText: "미리 말해주면 좋은데 항상 자기 편할 때만 맞춰요.", confidence: 82 }],
-      partner: [{ text: "피곤해서 배려해줄 줄", sourceText: "너무 힘들어서 조금 미루자고 한 건데 이렇게 화낼 줄은...", confidence: 76 }],
-    },
-  ],
+  interpretationBranches: [] as Array<{
+    id: string;
+    fact: KeywordItem;
+    me: KeywordItem[];
+    partner: KeywordItem[];
+  }>,
   conflictPeak: {
     type: "사실에 대한 다른 해석",
     category: "해석",
@@ -115,6 +89,118 @@ const CATEGORIES = [
   { id: "needs" as const, label: "요구", en: "Need", icon: Send, color: "#5BB89A", bg: "#E8F6F0" },
 ];
 
+type DashboardData = typeof MOCK_DATA;
+type CategoryId = typeof CATEGORIES[number]["id"];
+type MindmapKey = keyof DashboardData["mindmap"];
+
+const MINDMAP_KEY_BY_CATEGORY: Record<CategoryId, MindmapKey> = {
+  facts: "fact",
+  interpretations: "interpretation",
+  emotions: "emotion",
+  needs: "request",
+};
+
+function shortenForChip(text: string, max = 14) {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
+}
+
+function makeKeyword(text: string, sourceText = text): KeywordItem {
+  return {
+    text: shortenForChip(text),
+    sourceText,
+    confidence: 0,
+  };
+}
+
+function makeMindmapGroup(
+  section: { a?: string; b?: string } | undefined,
+  keywords: string[] | undefined,
+  sectionEvidence?: Array<{ keyword: string; evidence: Array<{ text: string; confidencePercent?: number | null }> }>,
+) {
+  const evidenceMap = new Map(
+    (sectionEvidence ?? []).map(({ keyword, evidence }) => [keyword, evidence[0] ?? null])
+  );
+
+  const makeKwWithEvidence = (text: string, sourceText = text): KeywordItem => {
+    const ev = evidenceMap.get(text);
+    return {
+      text: shortenForChip(text),
+      sourceText: ev?.text ?? sourceText,
+      confidence: ev?.confidencePercent ?? 0,
+    };
+  };
+
+  return {
+    shared: (keywords ?? []).slice(0, 3).map((k) => makeKwWithEvidence(k)),
+    meOnly: section?.a ? [{ text: shortenForChip(section.a), sourceText: section.a, confidence: 0 }] : [],
+    partnerOnly: section?.b ? [{ text: shortenForChip(section.b), sourceText: section.b, confidence: 0 }] : [],
+  };
+}
+
+function buildMindmapData({
+  llmResult,
+  aName,
+  bName,
+  relationship,
+  date,
+  evidenceResult,
+}: {
+  llmResult: LlmResult;
+  aName: string;
+  bName: string;
+  relationship: string;
+  date: string;
+  evidenceResult: LlmEvidenceResult | null;
+}): DashboardData {
+  const { sections, diagramKeywords, resultText } = llmResult;
+  const ev = evidenceResult?.keywordEvidence;
+
+  const firstFact = diagramKeywords.facts[0] || sections.facts.a || sections.facts.b || "";
+  const interpretationBranch =
+    firstFact && (sections.interpretations.a || sections.interpretations.b)
+      ? [{
+          id: "api-interpretation",
+          fact: makeKeyword(firstFact, sections.facts.a || sections.facts.b || firstFact),
+          me: sections.interpretations.a ? [makeKeyword(sections.interpretations.a, sections.interpretations.a)] : [],
+          partner: sections.interpretations.b ? [makeKeyword(sections.interpretations.b, sections.interpretations.b)] : [],
+        }]
+      : [];
+
+  return {
+    title: diagramKeywords.coreConflict[0] || "분석 결과",
+    date,
+    relationship,
+    me: { name: aName },
+    partner: { name: bName },
+    mindmap: {
+      fact: makeMindmapGroup(sections.facts, diagramKeywords.facts, ev?.facts),
+      interpretation: makeMindmapGroup(sections.interpretations, diagramKeywords.interpretations, ev?.interpretations),
+      emotion: makeMindmapGroup(sections.emotions, diagramKeywords.emotions, ev?.emotions),
+      request: makeMindmapGroup(sections.needs, diagramKeywords.needs, ev?.needs),
+    },
+    interpretationBranches: interpretationBranch,
+    conflictPeak: {
+      type: "",
+      category: "",
+      description: "",
+    },
+    aiRestatements: {
+      fact: { me: sections.facts.a || "", partner: sections.facts.b || "" },
+      interpretation: { me: sections.interpretations.a || "", partner: sections.interpretations.b || "" },
+      emotion: { me: sections.emotions.a || "", partner: sections.emotions.b || "" },
+      request: { me: sections.needs.a || "", partner: sections.needs.b || "" },
+    },
+    aiSummaryAndRestatement: {
+      neutralSummary: resultText,
+      aFromBPerspective: sections.interpretations.b || sections.emotions.b || "",
+      bFromAPerspective: sections.interpretations.a || sections.emotions.a || "",
+      confidence: 0,
+    },
+    clarifyingQuestions: sections.questions,
+  };
+}
+
 /* ── Portal Tooltip ── */
 function FixedTooltip({ node, onClose }: { node: SelectedNode; onClose: () => void }) {
   const w = 272, margin = 12;
@@ -136,10 +222,12 @@ function FixedTooltip({ node, onClose }: { node: SelectedNode; onClose: () => vo
             <Quote size={11} className="text-[#ffd1da]" strokeWidth={3} />
             <p className="font-semibold text-[11.5px] text-white/70">입력된 원문</p>
           </div>
-          <div className="flex items-center gap-1 px-2 py-0.5 bg-[#ffd1da]/20 rounded-full">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#ffd1da]" />
-            <span className="text-[10.5px] font-semibold text-[#ffd1da]">신뢰도 {node.confidence}%</span>
-          </div>
+          {node.confidence > 0 && (
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-[#ffd1da]/20 rounded-full">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#ffd1da]" />
+              <span className="text-[10.5px] font-semibold text-[#ffd1da]">신뢰도 {Math.min(node.confidence, 99)}%</span>
+            </div>
+          )}
         </div>
         <p className="text-[12.5px] text-white/90 leading-relaxed break-keep">"{node.sourceText}"</p>
         <button onClick={(e) => { e.stopPropagation(); onClose(); }}
@@ -277,7 +365,7 @@ function VennCard({ catData, cat, data, pick, sel }: {
 
 /* ── Mindmap Visualization ── */
 function MindmapVisualization({ data }: { data: typeof MOCK_DATA }) {
-  const [activeTab, setActiveTab] = useState("fact");
+  const [activeTab, setActiveTab] = useState("facts");
   const [sel, setSel] = useState<SelectedNode | null>(null);
 
   const pick = (item: KeywordItem, rect: DOMRect) => setSel(sel?.text === item.text ? null : { ...item, rect });
@@ -307,7 +395,7 @@ function MindmapVisualization({ data }: { data: typeof MOCK_DATA }) {
 
         {CATEGORIES.map((cat) => {
           /* Interpretation tab — tree view */
-          if (cat.id === "interpretation") {
+          if (cat.id === "interpretations") {
             return (
               <TabsContent key={cat.id} value={cat.id} className="mt-0 outline-none">
                 <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.25 }}
@@ -361,7 +449,7 @@ function MindmapVisualization({ data }: { data: typeof MOCK_DATA }) {
           }
 
           /* Venn diagram tabs */
-          const catData = data.mindmap[cat.id as keyof typeof data.mindmap];
+          const catData = data.mindmap[MINDMAP_KEY_BY_CATEGORY[cat.id]];
           return (
             <VennCard key={cat.id} catData={catData} cat={cat} data={data} pick={pick} sel={sel} />
           );
@@ -428,15 +516,108 @@ function CategoryCard({ cat, aName, bName, aText, bText, keywords }: {
   );
 }
 
+const TENSION_STYLES: Record<string, { color: string; bg: string }> = {
+  FACT_CONFLICT:      { color: "#E55050", bg: "#FEF2F2" },
+  PERSPECTIVE_GAP:    { color: "#F0A858", bg: "#FEF6E8" },
+  EMOTION_NEED_GAP:   { color: "#E88FA0", bg: "#FDF2F4" },
+  LABEL_MISMATCH:     { color: "#818CF8", bg: "#EEF2FF" },
+  UNADDRESSED_NEEDS:  { color: "#5BB89A", bg: "#E8F6F0" },
+  INTERPRETATION_GAP: { color: "#A78BFA", bg: "#F5F3FF" },
+};
+
+const PAIR_STYLES: Record<string, { color: string; bg: string }> = {
+  COMMON_FACT:              { color: "#818CF8", bg: "#EEF2FF" },
+  SHARED_EMOTION:           { color: "#E88FA0", bg: "#FDF2F4" },
+  INTERPRETATION_ALIGNMENT: { color: "#F0A858", bg: "#FEF6E8" },
+  NEED_ALIGNMENT:           { color: "#5BB89A", bg: "#E8F6F0" },
+};
+
+function TensionCard({ tension, aName, bName }: {
+  tension: DualAnalysisResult["tensions"][number];
+  aName: string;
+  bName: string;
+}) {
+  const style = TENSION_STYLES[tension.type] ?? { color: "#636366", bg: "#F5F5F7" };
+  return (
+    <div className="bg-white rounded-2xl border border-[#EBEBF0] overflow-hidden">
+      <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-[#F5F5F7]">
+        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: style.color }} />
+        <span className="text-[13.5px] font-bold text-[#1C1C1E]">{tension.displayName ?? tension.type}</span>
+      </div>
+      <div className="p-4 space-y-3">
+        <p className="text-[13px] text-[#636366] leading-relaxed break-keep">{tension.rationale}</p>
+        {tension.evidence.length > 0 && (
+          <div className="space-y-2 pt-1">
+            {tension.evidence.map((ev, i) => {
+              const isA = ev.speaker === "A";
+              const name = isA ? aName : bName;
+              const color = isA ? "#f07090" : "#7b87ff";
+              const bgCls = isA ? "bg-pink-50 border-pink-100" : "bg-indigo-50 border-indigo-100";
+              const confidencePct = ev.confidence != null ? Math.min(Math.round(ev.confidence * 100), 99) : null;
+              return (
+                <div key={i} className={`flex gap-2.5 rounded-xl p-3 border ${bgCls}`}>
+                  <div className="w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] flex-shrink-0 mt-0.5"
+                    style={{ backgroundColor: color + "33", color }}>
+                    {name.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-semibold mb-1" style={{ color }}>{name}</p>
+                    <p className="text-[12.5px] text-[#3f3f3f] leading-relaxed break-keep">"{ev.text}"</p>
+                    {confidencePct != null && confidencePct > 0 && (
+                      <p className="text-[10.5px] text-[#AEAEB2] mt-1">신뢰도 {confidencePct}%</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommonGroundCard({ pair, aName, bName }: {
+  pair: DualAnalysisResult["commonGroundPairs"][number];
+  aName: string;
+  bName: string;
+}) {
+  const style = PAIR_STYLES[pair.pairType] ?? { color: "#636366", bg: "#F5F5F7" };
+  return (
+    <div className="bg-white rounded-2xl border border-[#EBEBF0] overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#F5F5F7]">
+        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: style.color }} />
+        <span className="text-[12.5px] font-bold" style={{ color: style.color }}>{pair.pairTypeDisplayName}</span>
+        <span className="ml-auto text-[10.5px] text-[#AEAEB2]">유사도 {Math.round(pair.similarity * 100)}%</span>
+      </div>
+      <div className="p-4 space-y-2.5">
+        {pair.aStatement && (
+          <div className="flex gap-2.5">
+            <div className="w-5 h-5 rounded-full bg-pink-100 text-pink-500 flex items-center justify-center font-bold text-[9px] flex-shrink-0 mt-0.5">{aName.charAt(0)}</div>
+            <p className="text-[12.5px] text-[#3f3f3f] leading-relaxed break-keep flex-1">"{pair.aStatement.text}"</p>
+          </div>
+        )}
+        {pair.bStatement && (
+          <div className="flex gap-2.5">
+            <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-500 flex items-center justify-center font-bold text-[9px] flex-shrink-0 mt-0.5">{bName.charAt(0)}</div>
+            <p className="text-[12.5px] text-[#3f3f3f] leading-relaxed break-keep flex-1">"{pair.bStatement.text}"</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Dashboard Page ── */
 export function DashboardPage() {
   const navigate = useNavigate();
   const [llmResult, setLlmResult] = useState<LlmResult | null>(null);
+  const [dualResult, setDualResult] = useState<DualAnalysisResult | null>(null);
+  const [evidenceResult, setEvidenceResult] = useState<LlmEvidenceResult | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [personNames, setPersonNames] = useState({ a: "A", b: "B" });
   const [relationship, setRelationship] = useState("");
-  const [activeTab, setActiveTab] = useState("facts");
 
   useEffect(() => {
     const stored = sessionStorage.getItem("analysisData");
@@ -470,14 +651,25 @@ export function DashboardPage() {
       try { setRelationship(JSON.parse(roomRaw).relationship ?? ""); } catch { /* ignore */ }
     }
 
+    const handleLoadedLlm = (result: LlmResult) => {
+      setLlmResult(result);
+      Promise.all([
+        api.getDualResults(sessionId).catch(() => null),
+        api.getLlmEvidence(sessionId).catch(() => null),
+      ]).then(([dual, evidence]) => {
+        setDualResult(dual);
+        setEvidenceResult(evidence);
+      }).finally(() => setIsLoading(false));
+    };
+
     // GET 먼저 시도 → 없으면 POST로 생성, ANALYSIS_NOT_READY면 재시도
     const tryLoad = (retryCount = 0) => {
       api.getLlmAnalysis(sessionId)
-        .then((result) => { setLlmResult(result); setIsLoading(false); })
+        .then(handleLoadedLlm)
         .catch((err: ApiError) => {
           if (err.code === "LLM_RESULT_NOT_FOUND") {
             api.generateLlmAnalysis(sessionId)
-              .then((result) => { setLlmResult(result); setIsLoading(false); })
+              .then(handleLoadedLlm)
               .catch((genErr: ApiError) => {
                 if (genErr.code === "ANALYSIS_NOT_READY" && retryCount < 10) {
                   // 모델 분석 아직 진행 중 → 2초 후 재시도
@@ -545,6 +737,7 @@ export function DashboardPage() {
   const { sections, diagramKeywords, resultText } = llmResult;
   const { a: aName, b: bName } = personNames;
   const date = new Date(llmResult.createdAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\. /g, ".").replace(/\.$/, "");
+  const mindmapData = buildMindmapData({ llmResult, aName, bName, relationship, date, evidenceResult });
 
   return (
     <div className="flex-1 flex flex-col bg-[#F5F5F7] min-h-screen">
@@ -565,6 +758,8 @@ export function DashboardPage() {
           </div>
           <p className="text-[13px] text-[#AEAEB2]">두 사람의 관점을 AI가 재구성하여 갈등의 구조를 보여드립니다.</p>
         </div>
+
+        <MindmapVisualization data={mindmapData} />
 
         {/* 핵심 갈등 키워드 */}
         {diagramKeywords.coreConflict.length > 0 && (
@@ -597,27 +792,17 @@ export function DashboardPage() {
           </motion.div>
         </div>
 
-        {/* 요소별 상세 분석 — 탭 */}
+        {/* 요소별 상세 분석 */}
         <div className="px-4 sm:px-5 mb-5">
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
             className="flex items-center gap-2 mb-3 px-1">
             <div className="w-8 h-8 bg-[#F5F5F7] text-[#636366] rounded-xl flex items-center justify-center flex-shrink-0"><Target size={16} strokeWidth={2.5} /></div>
             <p className="text-[14.5px] font-bold text-[#222222]">요소별 상세 분석</p>
           </motion.div>
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="w-full justify-start h-auto bg-transparent border-b border-[#EBEBF0] rounded-none p-0 mb-4 overflow-x-auto flex-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                {CATEGORIES.map((cat) => (
-                  <TabsTrigger key={cat.id} value={cat.id}
-                    className="px-4 py-3 rounded-none border-b-2 font-semibold text-[13.5px] whitespace-nowrap -mb-[1px] data-[state=active]:text-[#1C1C1E] data-[state=inactive]:border-transparent data-[state=inactive]:text-[#AEAEB2]"
-                    style={{ borderColor: activeTab === cat.id ? cat.color : "transparent" }}>
-                    {cat.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {CATEGORIES.map((cat) => (
+          <div className="space-y-3">
+            {CATEGORIES.map((cat, i) => (
+              <motion.div key={cat.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.07 }}>
                 <CategoryCard
-                  key={cat.id}
                   cat={cat}
                   aName={aName}
                   bName={bName}
@@ -625,10 +810,52 @@ export function DashboardPage() {
                   bText={sections[cat.id]?.b ?? ""}
                   keywords={diagramKeywords[cat.id] ?? []}
                 />
-              ))}
-            </Tabs>
-          </motion.div>
+              </motion.div>
+            ))}
+          </div>
         </div>
+
+        {/* 갈등 포인트 */}
+        {dualResult && dualResult.tensions.length > 0 && (
+          <div className="px-4 sm:px-5 mb-5">
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
+              className="flex items-center gap-2 mb-3 px-1">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#FEF2F2] text-[#E55050]">
+                <Target size={16} strokeWidth={2.5} />
+              </div>
+              <p className="text-[14.5px] font-bold text-[#222222]">갈등 포인트</p>
+              <span className="ml-1 px-2 py-0.5 bg-[#FEF2F2] text-[#E55050] rounded-full text-[11px] font-semibold">{dualResult.tensions.length}개</span>
+            </motion.div>
+            <div className="space-y-3">
+              {dualResult.tensions.map((tension, i) => (
+                <motion.div key={tension.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 + i * 0.06 }}>
+                  <TensionCard tension={tension} aName={aName} bName={bName} />
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 두 사람의 공통점 */}
+        {dualResult && dualResult.commonGroundPairs.length > 0 && (
+          <div className="px-4 sm:px-5 mb-5">
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
+              className="flex items-center gap-2 mb-3 px-1">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#E8F6F0] text-[#5BB89A]">
+                <HelpCircle size={16} strokeWidth={2.5} />
+              </div>
+              <p className="text-[14.5px] font-bold text-[#222222]">두 사람의 공통점</p>
+              <span className="ml-1 px-2 py-0.5 bg-[#E8F6F0] text-[#5BB89A] rounded-full text-[11px] font-semibold">{dualResult.commonGroundPairs.length}개</span>
+            </motion.div>
+            <div className="space-y-3">
+              {dualResult.commonGroundPairs.map((pair, i) => (
+                <motion.div key={pair.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.47 + i * 0.05 }}>
+                  <CommonGroundCard pair={pair} aName={aName} bName={bName} />
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* 관계 전환 키워드 */}
         {diagramKeywords.relationshipShift.length > 0 && (

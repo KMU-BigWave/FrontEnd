@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowLeft, Brain } from "lucide-react";
 import { motion } from "motion/react";
+import { api } from "../utils/api";
 
 const MAX_CHARS = 30000;
 
@@ -14,12 +15,34 @@ function hasDanger(text: string) {
 export function SoloInput() {
   const navigate = useNavigate();
   const [text, setText] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleSubmit = () => {
-    if (text.trim().length < 10) return;
-    if (hasDanger(text)) { navigate("/safety"); return; }
-    sessionStorage.setItem("soloData", JSON.stringify({ text: text.trim() }));
-    navigate("/solo-loading");
+  const handleSubmit = async () => {
+    const rawText = text.trim();
+    if (rawText.length < 10 || isSubmitting) return;
+    if (hasDanger(rawText)) { navigate("/safety"); return; }
+
+    setIsSubmitting(true);
+    try {
+      const session = await api.createSession({
+        relationshipType: "OTHER",
+        mode: "SINGLE",
+        roomPassword: "0000",
+      });
+      await api.submitInput(session.id, rawText);
+      sessionStorage.setItem("soloData", JSON.stringify({ text: rawText, sessionId: session.id }));
+      navigate("/solo-loading");
+    } catch (error) {
+      const apiError = error as { code?: string; message?: string };
+      if (apiError.code === "INPUT_BLOCKED") {
+        navigate("/safety");
+        return;
+      }
+      console.error("생각 정리 입력 저장 실패", error);
+      alert(apiError.message ?? "입력 저장에 실패했어요.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -91,11 +114,11 @@ export function SoloInput() {
           </div>
 
           <button
-            disabled={text.trim().length < 10}
+            disabled={text.trim().length < 10 || isSubmitting}
             onClick={handleSubmit}
             className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl hover:bg-[#ffb3c4] disabled:bg-[#F0F0F5] disabled:text-[#C7C7CC] active:scale-[0.98] transition-all font-semibold"
           >
-            {text.trim().length < 10 ? "10자 이상 작성해주세요" : "AI로 생각 정리하기"}
+            {isSubmitting ? "저장 중..." : text.trim().length < 10 ? "10자 이상 작성해주세요" : "AI로 생각 정리하기"}
           </button>
         </motion.div>
       </main>
