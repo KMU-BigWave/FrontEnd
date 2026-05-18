@@ -28,7 +28,7 @@ import {
 interface KeywordItem { text: string; sourceText: string; confidence: number; }
 interface SelectedNode extends KeywordItem { rect: DOMRect; }
 
-const MOCK_DATA = {
+const DASHBOARD_DATA_TEMPLATE = {
   title: "",
   date: "",
   relationship: "",
@@ -59,27 +59,23 @@ const MOCK_DATA = {
     partner: KeywordItem[];
   }>,
   conflictPeak: {
-    type: "사실에 대한 다른 해석",
-    category: "해석",
-    description: "같은 상황을 완전히 다른 의미로 받아들이고 있어요. 민수님은 '연락 없음 = 무관심'으로, 지은님은 '피곤함 = 당연히 이해해줄 것'으로 해석하면서 간극이 가장 컸습니다.",
+    type: "",
+    category: "",
+    description: "",
   },
   aiRestatements: {
-    fact: { me: "민수님은 밤 10시 이후 약 3시간 동안 지은님으로부터 아무런 연락을 받지 못한 상황이었습니다.", partner: "지은님은 업무 후 극도의 피로감으로 인해 별도의 안내 없이 잠이 들었습니다." },
-    interpretation: { me: "민수님에게 연락 두절은 '나에 대한 관심이 부족하다'는 신호로 읽혔습니다.", partner: "지은님은 서로의 상황을 이해해줄 수 있는 관계라고 믿었기에, 별도로 알리지 않아도 괜찮다고 판단했습니다." },
-    emotion: { me: "민수님은 서운함과 함께 '혹시 무시당하는 건 아닌가'라는 두려움을 느꼈습니다.", partner: "지은님은 뒤늦게 상황을 알고 미안함과 동시에 당혹감을 느꼈습니다." },
-    request: { me: "민수님은 자기 전 짧은 인사 메시지라도 있다면 안심할 수 있다고 이야기하고 있습니다.", partner: "지은님은 컨디션이 좋지 않을 때 편하게 쉴 수 있는 여유를 원하고 있습니다." },
+    fact: { me: "", partner: "" },
+    interpretation: { me: "", partner: "" },
+    emotion: { me: "", partner: "" },
+    request: { me: "", partner: "" },
   },
   aiSummaryAndRestatement: {
-    neutralSummary: "두 사람은 '밤 10시 이후 연락 두절'이라는 같은 사실을 두고, 서로 다른 기대치로 인해 갈등을 겪고 있습니다.",
-    aFromBPerspective: "지은님, 민수님은 단순히 연락을 자주 하기를 바라는 게 아니라, 피곤해서 일찍 자게 되더라도 '나 잔다'는 짧은 말 마디로 자신을 안심시켜 주기를 바랐던 것 같아요.",
-    bFromAPerspective: "민수님, 지은님은 민수님을 무시하거나 우선순위에서 미룬 것이 아닙니다. 야근 후 너무 지친 나머지 오래 만난 사이니 이해해 주겠지라는 믿음 때문에 편하게 잠에 든 것 같습니다.",
-    confidence: 88,
+    neutralSummary: "",
+    aFromBPerspective: "",
+    bFromAPerspective: "",
+    confidence: 0,
   },
-  clarifyingQuestions: [
-    "서로에게 '연락'이 가지는 의미가 다를 수 있어요. 각자에게 연락은 어떤 의미인지 이야기해본 적 있나요?",
-    "피곤하거나 바쁠 때 연락이 어려운 상황을 미리 알려주는 방법에 대해 함께 정해본 적이 있나요?",
-    "상대방이 응답이 없을 때, 가장 먼저 드는 생각은 무엇인가요?",
-  ],
+  clarifyingQuestions: [] as string[],
 };
 
 const CATEGORIES = [
@@ -89,7 +85,7 @@ const CATEGORIES = [
   { id: "needs" as const, label: "요구", en: "Need", icon: Send, color: "#5BB89A", bg: "#E8F6F0" },
 ];
 
-type DashboardData = typeof MOCK_DATA;
+type DashboardData = typeof DASHBOARD_DATA_TEMPLATE;
 type CategoryId = typeof CATEGORIES[number]["id"];
 type MindmapKey = keyof DashboardData["mindmap"];
 
@@ -260,7 +256,7 @@ function KwBtn({ item, className, style, onSelect, isSelected }: {
 function VennCard({ catData, cat, data, pick, sel }: {
   catData: { meOnly: KeywordItem[]; shared: KeywordItem[]; partnerOnly: KeywordItem[] };
   cat: { id: string; label: string; en: string; color: string; bg: string };
-  data: typeof MOCK_DATA;
+  data: DashboardData;
   pick: (item: KeywordItem, rect: DOMRect) => void;
   sel: SelectedNode | null;
 }) {
@@ -364,7 +360,7 @@ function VennCard({ catData, cat, data, pick, sel }: {
 }
 
 /* ── Mindmap Visualization ── */
-function MindmapVisualization({ data }: { data: typeof MOCK_DATA }) {
+function MindmapVisualization({ data }: { data: DashboardData }) {
   const [activeTab, setActiveTab] = useState("facts");
   const [sel, setSel] = useState<SelectedNode | null>(null);
 
