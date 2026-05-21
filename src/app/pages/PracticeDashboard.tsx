@@ -580,7 +580,7 @@ function VisualizationView({ onBack }: { onBack: () => void }) {
   const tabs: { key: TabKey; label: string; color: string }[] = [
     { key: 'FACT', label: '사실 Fact', color: '#6366F1' },
     { key: 'INTERPRET', label: '해석 Interpret', color: '#F59E0B' },
-    { key: 'FEEL', label: '감정 Feel', color: '#FF6B8A' },
+    { key: 'FEEL', label: '감정 Emotion', color: '#FF6B8A' },
     { key: 'NEED', label: '요구 Need', color: '#10B981' },
   ];
 

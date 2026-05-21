@@ -9,6 +9,7 @@ type ApiSuccess<T> = {
 
 type ApiFailure = {
   success: false;
+  message?: string;
   error?: {
     code?: string;
     message?: string;
@@ -23,7 +24,7 @@ export type RelationshipType =
   | "TEAM"
   | "OTHER";
 
-export type SessionMode = "DUAL" | "SELF";
+export type SessionMode = "DUAL" | "SINGLE";
 
 export type Session = {
   id: string;
@@ -49,6 +50,7 @@ export type LlmResult = {
   sessionId: string;
   mode: string;
   resultText: string;
+  structuredResult?: unknown;
   sections: {
     facts: { a: string; b: string; self: string };
     interpretations: { a: string; b: string; self: string };
@@ -65,8 +67,162 @@ export type LlmResult = {
     relationshipShift: string[];
     questions: string[];
   };
+  sourceSnapshot?: unknown;
   createdAt: string;
   updatedAt: string;
+};
+
+export type SessionStatus = {
+  sessionId: string;
+  status: string;
+  myRole: "A" | "B" | "SELF";
+  bothSubmitted: boolean;
+};
+
+export type AnalysisStatus = {
+  sessionId: string;
+  mode: SessionMode;
+  status: string;
+  relationshipType: RelationshipType;
+  participantRole: "A" | "B" | "SELF";
+  updatedAt: string;
+};
+
+export type StatementLabel =
+  | "FACT"
+  | "INTERPRETATION"
+  | "EMOTION"
+  | "NEED"
+  | "F"
+  | "I"
+  | "E"
+  | "N";
+
+export type AnalysisStatement = {
+  id: string;
+  speaker: "A" | "B" | "SELF";
+  text: string;
+  spanStart: number;
+  spanEnd: number;
+  label: StatementLabel;
+  confidence: number;
+};
+
+export type AnalysisSession = {
+  id: string;
+  status: string;
+  relationshipType: RelationshipType;
+  mode: SessionMode;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type BasicAnalysisResult = {
+  session: AnalysisSession;
+  statements: AnalysisStatement[];
+};
+
+export type DualAnalysisResult = {
+  session: AnalysisSession;
+  statements: {
+    A: AnalysisStatement[];
+    B: AnalysisStatement[];
+  };
+  alignedPairs: Array<{
+    id: string;
+    similarity: number;
+    pairType: string;
+    pairTypeDisplayName: string;
+    aStatement: Omit<AnalysisStatement, "speaker">;
+    bStatement: Omit<AnalysisStatement, "speaker">;
+  }>;
+  commonGroundPairs: Array<{
+    id: string;
+    similarity: number;
+    pairType: string;
+    pairTypeDisplayName: string;
+    aStatement?: Omit<AnalysisStatement, "speaker">;
+    bStatement?: Omit<AnalysisStatement, "speaker">;
+  }>;
+  tensions: Array<{
+    id: string;
+    type: string;
+    displayName?: string;
+    rationale: string;
+    createdAt?: string;
+    evidence: AnalysisStatement[];
+  }>;
+  summary: {
+    aStatementCount: number;
+    bStatementCount: number;
+    alignedPairCount: number;
+    commonGroundPairCount: number;
+    tensionCount: number;
+  };
+};
+
+export type SingleAnalysisResult = {
+  session: AnalysisSession;
+  input: {
+    id: string;
+    speaker: "A" | "B" | "SELF";
+    rawText: string;
+    submittedAt: string;
+  } | null;
+  statements: AnalysisStatement[];
+  summary: {
+    statementCount: number;
+    labelCounts: Partial<Record<StatementLabel, number>>;
+  };
+};
+
+export type HistoryResult = {
+  items: Array<{
+    sessionId: string;
+    status: string;
+    mode: SessionMode;
+    relationshipType: RelationshipType;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+};
+
+export type LlmEvidenceStatement = AnalysisStatement & {
+  statementId?: string;
+  confidencePercent?: number | null;
+  keywordSimilarity?: number;
+  keywordSimilarityPercent?: number;
+};
+
+export type LlmEvidenceResult = {
+  sessionId: string;
+  mode: SessionMode;
+  keywordEvidence: Partial<Record<"facts" | "interpretations" | "emotions" | "needs", Array<{
+    keyword: string;
+    label: StatementLabel;
+    evidence: LlmEvidenceStatement[];
+  }>>>;
+  tensions: Array<{
+    id: string;
+    type: string;
+    rationale: string;
+    evidence: LlmEvidenceStatement[];
+  }>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SelfLlmResults = {
+  count: number;
+  results: Array<LlmResult & {
+    session?: AnalysisSession;
+    input?: {
+      id: string;
+      speaker: "A" | "B" | "SELF";
+      rawText: string;
+      submittedAt: string;
+    } | null;
+  }>;
 };
 
 export class ApiError extends Error {
@@ -105,7 +261,7 @@ async function request<T>(path: string, init: RequestInit = {}) {
 
   if (!response.ok || payload?.success === false) {
     throw new ApiError(
-      payload?.error?.message ?? "API 요청에 실패했습니다.",
+      payload?.error?.message ?? payload?.message ?? "API 요청에 실패했습니다.",
       response.status,
       payload?.error?.code,
     );
@@ -117,6 +273,12 @@ async function request<T>(path: string, init: RequestInit = {}) {
 export const api = {
   getMe() {
     return request<Me>("/users/me");
+  },
+
+  logout() {
+    return request<unknown>("/auth/google/logout", {
+      method: "POST",
+    });
   },
 
   createSession(input: {
@@ -152,9 +314,23 @@ export const api = {
   },
 
   getSessionStatus(sessionId: string) {
-    return request<{ sessionId: string; status: string; myRole: string; bothSubmitted: boolean }>(
-      `/sessions/${sessionId}/status`
-    );
+    return request<SessionStatus>(`/sessions/${sessionId}/status`);
+  },
+
+  getAnalysisStatus(sessionId: string) {
+    return request<AnalysisStatus>(`/sessions/${sessionId}/analysis-status`);
+  },
+
+  getBasicAnalysis(sessionId: string) {
+    return request<BasicAnalysisResult>(`/sessions/${sessionId}/analysis`);
+  },
+
+  getDualResults(sessionId: string) {
+    return request<DualAnalysisResult>(`/sessions/${sessionId}/results/dual`);
+  },
+
+  getSingleResults(sessionId: string) {
+    return request<SingleAnalysisResult>(`/sessions/${sessionId}/results/single`);
   },
 
   generateLlmAnalysis(sessionId: string) {
@@ -165,5 +341,17 @@ export const api = {
 
   getLlmAnalysis(sessionId: string) {
     return request<LlmResult>(`/llm/sessions/${sessionId}/analysis`);
+  },
+
+  getLlmEvidence(sessionId: string) {
+    return request<LlmEvidenceResult>(`/llm/sessions/${sessionId}/evidence`);
+  },
+
+  getHistory() {
+    return request<HistoryResult>("/sessions/history");
+  },
+
+  getSelfLlmResults() {
+    return request<SelfLlmResults>("/llm/self/results");
   },
 };

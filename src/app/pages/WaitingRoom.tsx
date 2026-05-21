@@ -37,16 +37,19 @@ export function WaitingRoom() {
 
     const check = async () => {
       try {
-        const status = await api.getSessionStatus(roomId);
-        setPersonADone(status.myRole === "B" ? true : status.myRole === "A" && true);
-        setPersonBDone(status.bothSubmitted);
+        const [sessionStatus, analysisStatus] = await Promise.all([
+          api.getSessionStatus(roomId),
+          api.getAnalysisStatus(roomId).catch(() => null),
+        ]);
+        const currentStatus = analysisStatus?.status ?? sessionStatus.status;
+        const currentRole = analysisStatus?.participantRole ?? sessionStatus.myRole;
 
         // role A는 항상 본인이 제출 완료한 상태로 WaitingRoom에 옴
         // role B도 마찬가지 → 본인은 항상 done
         setPersonADone(true);
-        setPersonBDone(status.bothSubmitted);
+        setPersonBDone(sessionStatus.bothSubmitted || currentStatus === "DONE");
 
-        if (status.bothSubmitted && status.status === "DONE") {
+        if ((sessionStatus.bothSubmitted || currentRole === "SELF") && currentStatus === "DONE") {
           // 기존 analysisData에 sessionId 보장
           const existing = JSON.parse(sessionStorage.getItem("analysisData") || "{}");
           sessionStorage.setItem("analysisData", JSON.stringify({
@@ -58,7 +61,7 @@ export function WaitingRoom() {
           setTimeout(() => navigate("/analysis"), 1000);
           return true;
         }
-        if (status.bothSubmitted && status.status === "FAILED") {
+        if (currentStatus === "FAILED" || currentStatus === "BLOCKED") {
           setAnalysisFailed(true);
           return true;
         }

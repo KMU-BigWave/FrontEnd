@@ -17,6 +17,15 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
+import { SoloAnalysisLoadingView, SOLO_LOADING_STEPS } from "./SoloLoading";
+import {
+  api,
+  type AnalysisStatement,
+  type ApiError,
+  type LlmEvidenceResult,
+  type LlmResult,
+  type SingleAnalysisResult,
+} from "../utils/api";
 
 /* ── Types ── */
 interface KeywordItem {
@@ -28,67 +37,206 @@ interface SelectedNode extends KeywordItem {
   rect: DOMRect;
 }
 
-/* ── Mock Data ── */
-const SOLO_MOCK = {
-  title: "친구와의 서운한 감정",
-  date: "2026.04.13",
-
-  keywords: {
-    fact: [
-      { text: "약속 30분 지각", sourceText: "친구가 약속 시간보다 30분 늦게 나타났어요. 미리 연락도 없었어요.", confidence: 91 },
-      { text: "사과 없이 넘어감", sourceText: "왔는데 '미안'이라는 말 한마디도 없이 어디 갈지 얘기했어요.", confidence: 88 },
-      { text: "세 번 연속 지각", sourceText: "이번이 세 번째인데 매번 이런 식이에요.", confidence: 85 },
-    ],
-    interpretation: [
-      { text: "나를 중요하게 생각 안 함", sourceText: "이 정도면 저를 신경 쓰지 않는다는 느낌이 들어요.", confidence: 79 },
-      { text: "배려심 부족", sourceText: "기다리게 하면 얼마나 불편한지 생각 안 하는 것 같아요.", confidence: 82 },
-      { text: "당연하게 여기는 것 같음", sourceText: "제가 항상 기다려주니까 당연하다고 생각하는 것 같아요.", confidence: 76 },
-    ],
-    emotion: [
-      { text: "서운함", sourceText: "솔직히 많이 서운했어요.", confidence: 94 },
-      { text: "화남", sourceText: "기다리면서 속으로 꽤 화가 났어요.", confidence: 90 },
-      { text: "민망함", sourceText: "카페에서 혼자 기다리는 게 민망하기도 했고.", confidence: 85 },
-      { text: "말 못해서 답답함", sourceText: "화내기도 그렇고 그냥 참았는데 더 답답했어요.", confidence: 88 },
-    ],
-    request: [
-      { text: "미리 연락해줬으면", sourceText: "늦을 것 같으면 미리 문자라도 보내줬으면 해요.", confidence: 87 },
-      { text: "사과 한마디", sourceText: "늦었으면 미안하다는 말 한마디가 그렇게 어렵나요.", confidence: 89 },
-      { text: "배려받고 싶음", sourceText: "친구니까 더 잘 챙겨줬으면 하는 마음이에요.", confidence: 83 },
-    ],
-  },
-
-  aiSummary:
-    "친구가 약속 시간을 반복적으로 지키지 않고 사과 없이 넘어가는 상황이 세 차례 이상 반복되면서 쌓인 감정을 정리하고 싶은 상황입니다. 단순한 지각의 문제가 아니라, 관계에서 존중받고 있는지에 대한 불확실함이 핵심입니다.",
-
-  thoughtPoint: {
-    coreDesire: "관계에서 '존중받고 싶다'는 욕구",
-    description:
-      "지금 가장 힘든 지점은 지각 자체보다 '나는 이 친구에게 중요한 사람일까?'라는 의문입니다. 배려와 사과를 바라는 것은 사실 그 이상의 것, 즉 내가 이 관계에서 소중히 여겨지고 있다는 확인을 원하기 때문입니다. 이 욕구가 충족되지 않을 때마다 화가 쌓이지만, 직접 말하기 어려워 참는 패턴이 반복되는 것 같습니다.",
-  },
-
-  aiAnalysis: {
-    mainInsight:
-      "친구의 반복적인 지각이 단순한 습관의 문제일 수 있지만, 당신에게는 '나를 어떻게 대하는가'에 대한 신호로 읽히고 있어요.",
-    advice: [
-      "참고 넘어가는 패턴이 반복될수록 감정은 더 쌓입니다. 다음에 비슷한 상황이 생기면, 그 자리에서 가볍게 '기다리는 거 좀 힘들었어'라고 말해보는 것을 추천해요.",
-      "상대방은 지각이 당신에게 얼마나 큰 의미인지 모를 수 있어요. 비난이 아닌 '나의 경험'을 전달하면 상대방도 방어적이 되지 않고 들을 가능성이 높아집니다.",
-      "이 관계가 당신에게 중요하다면, 솔직한 대화 한 번이 쌓인 감정을 해소하는 데 훨씬 효과적일 수 있어요.",
-    ],
-  },
-
-  clarifyingQuestions: [
-    "이 친구에게 직접 서운함을 표현해본 적이 있나요? 그때 어떤 반응이었나요?",
-    "이 상황에서 당신이 진짜 원하는 것은 사과인가요, 아니면 앞으로 달라지는 모습인가요?",
-    "이 감정을 참고 넘어갔을 때, 나중에 어떤 감정이 남았나요?",
-  ],
-};
-
 const CATEGORIES = [
   { id: "fact" as const, label: "사실", en: "Fact", icon: ListChecks, color: "#818CF8", bg: "#EEF2FF" },
   { id: "interpretation" as const, label: "해석", en: "Interpret", icon: BrainCircuit, color: "#F0A858", bg: "#FEF6E8" },
-  { id: "emotion" as const, label: "감정", en: "Feel", icon: HeartPulse, color: "#E88FA0", bg: "#FDF2F4" },
+  { id: "emotion" as const, label: "감정", en: "Emotion", icon: HeartPulse, color: "#E88FA0", bg: "#FDF2F4" },
   { id: "request" as const, label: "요구", en: "Need", icon: Send, color: "#5BB89A", bg: "#E8F6F0" },
 ];
+
+interface SoloDashboardData {
+  title: string;
+  date: string;
+  keywords: Record<(typeof CATEGORIES)[number]["id"], KeywordItem[]>;
+  aiSummary: string;
+  thoughtPoint: {
+    coreDesire: string;
+    description: string;
+  };
+  aiAnalysis: {
+    mainInsight: string;
+    advice: string[];
+  };
+  clarifyingQuestions: string[];
+}
+
+type SoloCategoryKey = keyof SoloDashboardData["keywords"];
+
+const EMPTY_SOLO_DATA: SoloDashboardData = {
+  title: "",
+  date: "",
+  keywords: {
+    fact: [],
+    interpretation: [],
+    emotion: [],
+    request: [],
+  },
+  aiSummary: "",
+  thoughtPoint: {
+    coreDesire: "",
+    description: "",
+  },
+  aiAnalysis: {
+    mainInsight: "",
+    advice: [],
+  },
+  clarifyingQuestions: [],
+};
+
+const LABEL_TO_CATEGORY: Record<string, SoloCategoryKey> = {
+  FACT: "fact",
+  F: "fact",
+  INTERPRETATION: "interpretation",
+  I: "interpretation",
+  EMOTION: "emotion",
+  E: "emotion",
+  NEED: "request",
+  N: "request",
+};
+
+const EVIDENCE_TO_CATEGORY: Record<"facts" | "interpretations" | "emotions" | "needs", SoloCategoryKey> = {
+  facts: "fact",
+  interpretations: "interpretation",
+  emotions: "emotion",
+  needs: "request",
+};
+
+function formatDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date
+    .toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })
+    .replace(/\. /g, ".")
+    .replace(/\.$/, "");
+}
+
+function toPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) return 0;
+  return value > 1 ? Math.round(value) : Math.round(value * 100);
+}
+
+function shorten(text: string, max = 14) {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
+}
+
+function keywordFromStatement(statement: AnalysisStatement): KeywordItem {
+  return {
+    text: shorten(statement.text),
+    sourceText: statement.text,
+    confidence: toPercent(statement.confidence),
+  };
+}
+
+function keywordsFromStatements(statements: AnalysisStatement[]) {
+  const grouped: SoloDashboardData["keywords"] = {
+    fact: [],
+    interpretation: [],
+    emotion: [],
+    request: [],
+  };
+
+  statements.forEach((statement) => {
+    const key = LABEL_TO_CATEGORY[statement.label];
+    if (!key || grouped[key].length >= 5) return;
+    grouped[key].push(keywordFromStatement(statement));
+  });
+
+  return grouped;
+}
+
+function mergeEvidenceKeywords(
+  fallback: SoloDashboardData["keywords"],
+  evidence: LlmEvidenceResult | null,
+) {
+  if (!evidence) return fallback;
+
+  const next = { ...fallback };
+  (Object.keys(EVIDENCE_TO_CATEGORY) as Array<keyof typeof EVIDENCE_TO_CATEGORY>).forEach((evidenceKey) => {
+    const category = EVIDENCE_TO_CATEGORY[evidenceKey];
+    const items = evidence.keywordEvidence[evidenceKey] ?? [];
+    if (!items.length) return;
+
+    next[category] = items.slice(0, 5).map((item) => {
+      const firstEvidence = item.evidence[0];
+      return {
+        text: item.keyword,
+        sourceText: firstEvidence?.text ?? item.keyword,
+        confidence: firstEvidence?.confidencePercent ?? toPercent(firstEvidence?.confidence),
+      };
+    });
+  });
+
+  return next;
+}
+
+function buildSoloDashboardData({
+  single,
+  llm,
+  evidence,
+}: {
+  single: SingleAnalysisResult | null;
+  llm: LlmResult | null;
+  evidence: LlmEvidenceResult | null;
+}): SoloDashboardData {
+  const keywords = mergeEvidenceKeywords(
+    keywordsFromStatements(single?.statements ?? []),
+    evidence,
+  );
+  const sections = llm?.sections;
+  const diagramKeywords = llm?.diagramKeywords;
+  const coreDesire =
+    diagramKeywords?.needs?.[0] ??
+    diagramKeywords?.coreConflict?.[0] ??
+    "";
+  const mainInsight =
+    sections?.interpretations?.self ||
+    sections?.facts?.self ||
+    llm?.resultText ||
+    "";
+  const thoughtDescription =
+    sections?.emotions?.self ||
+    sections?.interpretations?.self ||
+    sections?.needs?.self ||
+    "";
+
+  return {
+    title: diagramKeywords?.coreConflict?.[0] ? `${diagramKeywords.coreConflict[0]} 정리` : "생각 정리 결과",
+    date: formatDate(llm?.createdAt ?? single?.session.createdAt),
+    keywords,
+    aiSummary: llm?.resultText || "",
+    thoughtPoint: {
+      coreDesire,
+      description: thoughtDescription,
+    },
+    aiAnalysis: {
+      mainInsight,
+      advice: sections?.needs?.self ? [sections.needs.self] : [],
+    },
+    clarifyingQuestions: sections?.questions ?? [],
+  };
+}
+
+async function getOrCreateLlmAnalysis(sessionId: string, retryCount = 0): Promise<LlmResult> {
+  try {
+    return await api.getLlmAnalysis(sessionId);
+  } catch (error) {
+    const getError = error as ApiError;
+    if (getError.code !== "LLM_RESULT_NOT_FOUND") throw error;
+  }
+
+  try {
+    return await api.generateLlmAnalysis(sessionId);
+  } catch (error) {
+    const createError = error as ApiError;
+    if (createError.code === "ANALYSIS_NOT_READY" && retryCount < 10) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return getOrCreateLlmAnalysis(sessionId, retryCount + 1);
+    }
+    throw error;
+  }
+}
 
 /* ── Fixed Portal Tooltip ── */
 function FixedTooltip({ node, onClose }: { node: SelectedNode; onClose: () => void }) {
@@ -249,7 +397,7 @@ function BranchDiagram({
 }
 
 /* ── Branch Visualization with Tabs ── */
-function BranchVisualization({ data }: { data: typeof SOLO_MOCK }) {
+function BranchVisualization({ data }: { data: SoloDashboardData }) {
   const [activeTab, setActiveTab] = useState("fact");
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
 
@@ -320,8 +468,75 @@ function BranchVisualization({ data }: { data: typeof SOLO_MOCK }) {
 /* ── Main Solo Dashboard ── */
 export function SoloDashboard() {
   const navigate = useNavigate();
-  const [data] = useState(SOLO_MOCK);
+  const [data, setData] = useState<SoloDashboardData>(EMPTY_SOLO_DATA);
   const [expandedAdvice, setExpandedAdvice] = useState(false);
+  const [apiError, setApiError] = useState("");
+  const [isApiLoading, setIsApiLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    try {
+      const stored = sessionStorage.getItem("soloData");
+      if (!stored) {
+        setData(EMPTY_SOLO_DATA);
+        setApiError("분석 데이터가 없습니다. 홈으로 돌아가 다시 시도해주세요.");
+        return;
+      }
+
+      const parsed = JSON.parse(stored) as { sessionId?: string; text?: string };
+      if (!parsed.sessionId) {
+        setData(EMPTY_SOLO_DATA);
+        setApiError("세션 정보가 없습니다. 다시 시도해주세요.");
+        return;
+      }
+
+      const load = async () => {
+        setIsApiLoading(true);
+        setApiError("");
+
+        try {
+          const singleResult = await api.getSingleResults(parsed.sessionId!);
+          const llmResult = await getOrCreateLlmAnalysis(parsed.sessionId!);
+          const evidenceResult = await api.getLlmEvidence(parsed.sessionId!).catch(() => null);
+
+          if (cancelled) return;
+          setData(buildSoloDashboardData({
+            single: singleResult,
+            llm: llmResult,
+            evidence: evidenceResult,
+          }));
+        } catch (error) {
+          if (cancelled) return;
+          const reason = error as { message?: string };
+          setData(EMPTY_SOLO_DATA);
+          setApiError(reason.message ?? "분석 결과를 아직 불러오지 못했습니다.");
+        } finally {
+          if (!cancelled) setIsApiLoading(false);
+        }
+      };
+
+      void load();
+    } catch (error) {
+      console.error("생각 정리 분석 조회 실패", error);
+    }
+
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!isApiLoading) {
+      setLoadingStep(0);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setLoadingStep((step) => Math.min(step + 1, SOLO_LOADING_STEPS.length - 1));
+    }, 900);
+
+    return () => clearInterval(timer);
+  }, [isApiLoading]);
 
   return (
     <div className="flex-1 flex flex-col bg-[#F5F5F7] min-h-screen">
@@ -338,6 +553,10 @@ export function SoloDashboard() {
       </header>
 
       <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1200px] mx-auto">
+        {isApiLoading && !apiError ? (
+          <SoloAnalysisLoadingView currentStep={loadingStep} fullScreen={false} />
+        ) : (
+          <>
         {/* Title */}
         <div className="px-5 pt-6 pb-5 bg-white border-b border-[#EBEBF0]">
           <div className="flex items-center gap-2 mb-2.5">
@@ -354,6 +573,18 @@ export function SoloDashboard() {
           </p>
         </div>
 
+        {apiError && (
+          <div className="px-4 sm:px-5 pt-5">
+            <div className="rounded-2xl border p-4 bg-[#FFF8F8] border-red-100">
+              <p className="text-[13px] font-semibold text-red-500">
+                {apiError}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!apiError && (
+          <>
         {/* Branching Visualization */}
         <BranchVisualization data={data} />
 
@@ -503,6 +734,10 @@ export function SoloDashboard() {
             </div>
           </motion.div>
         </div>
+          </>
+        )}
+          </>
+        )}
       </div>
     </div>
   );

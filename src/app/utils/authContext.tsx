@@ -44,6 +44,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
+    void api.logout().catch((error) => {
+      console.error("로그아웃 실패", error);
+    });
     setUser(null);
   };
 
