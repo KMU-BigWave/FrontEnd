@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router";
 import {
-  Home,
   ListChecks,
   BrainCircuit,
   HeartPulse,
@@ -12,11 +11,13 @@ import {
   X,
   Quote,
   Wand2,
-  Loader2,
   AlertCircle,
+  Sparkles,
+  AlignLeft,
+  MessageSquare,
+  ChevronLeft,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import {
   api,
   type ApiError,
@@ -25,14 +26,22 @@ import {
   type LlmEvidenceResult,
 } from "../utils/api";
 
+/* ═══════════════════════════════════════════════
+   Types
+═══════════════════════════════════════════════ */
 interface KeywordItem {
   text: string;
   sourceText: string;
   confidence: number;
   sourceKind: "input" | "analysis";
 }
-interface SelectedNode extends KeywordItem { rect: DOMRect; }
+interface SelectedNode extends KeywordItem { rect: DOMRect; side: "A" | "B" | "shared"; }
 
+type FeinCatId = "facts" | "interpretations" | "emotions" | "needs";
+
+/* ═══════════════════════════════════════════════
+   Constants
+═══════════════════════════════════════════════ */
 const DASHBOARD_DATA_TEMPLATE = {
   title: "",
   date: "",
@@ -63,11 +72,7 @@ const DASHBOARD_DATA_TEMPLATE = {
     me: KeywordItem[];
     partner: KeywordItem[];
   }>,
-  conflictPeak: {
-    type: "",
-    category: "",
-    description: "",
-  },
+  conflictPeak: { type: "", category: "", description: "" },
   aiRestatements: {
     fact: { me: "", partner: "" },
     interpretation: { me: "", partner: "" },
@@ -84,10 +89,10 @@ const DASHBOARD_DATA_TEMPLATE = {
 };
 
 const CATEGORIES = [
-  { id: "facts" as const, label: "사실", en: "Fact", icon: ListChecks, color: "#818CF8", bg: "#EEF2FF" },
-  { id: "interpretations" as const, label: "해석", en: "Interpret", icon: BrainCircuit, color: "#F0A858", bg: "#FEF6E8" },
-  { id: "emotions" as const, label: "감정", en: "Emotion", icon: HeartPulse, color: "#E88FA0", bg: "#FDF2F4" },
-  { id: "needs" as const, label: "요구", en: "Need", icon: Send, color: "#5BB89A", bg: "#E8F6F0" },
+  { id: "facts" as const,           label: "사실", en: "Facts",      icon: ListChecks,   color: "#7C8CF8", bg: "#EEF0FF" },
+  { id: "interpretations" as const, label: "해석", en: "Interpret",  icon: BrainCircuit, color: "#F0A040", bg: "#FEF5E7" },
+  { id: "emotions" as const,        label: "감정", en: "Emotions",   icon: HeartPulse,   color: "#E06B8B", bg: "#FDF0F4" },
+  { id: "needs" as const,           label: "요구", en: "Needs",      icon: Send,         color: "#3BAF85", bg: "#E6F7F2" },
 ];
 
 type DashboardData = typeof DASHBOARD_DATA_TEMPLATE;
@@ -102,98 +107,123 @@ const MINDMAP_KEY_BY_CATEGORY: Record<CategoryId, MindmapKey> = {
   needs: "request",
 };
 
+const TENSION_STYLES: Record<string, { color: string; bg: string }> = {
+  FACT_CONFLICT:      { color: "#DC4C4C", bg: "#FFF1F1" },
+  PERSPECTIVE_GAP:    { color: "#D9820A", bg: "#FEF5E7" },
+  EMOTION_NEED_GAP:   { color: "#C45B7B", bg: "#FDF0F4" },
+  LABEL_MISMATCH:     { color: "#5B5FCF", bg: "#EEEEFF" },
+  UNADDRESSED_NEEDS:  { color: "#28916A", bg: "#E6F7F2" },
+  INTERPRETATION_GAP: { color: "#7C3AED", bg: "#F5F0FF" },
+};
+
+/* ═══════════════════════════════════════════════
+   Design Tokens
+═══════════════════════════════════════════════ */
+const A_COLOR   = "#D94F72";  // rose — 주체 A
+const B_COLOR   = "#5B5FCF";  // indigo — 주체 B
+const A_LIGHT   = "#FFE8EF";
+const B_LIGHT   = "#EAEBFF";
+const CARD_SHADOW = "0 1px 4px rgba(0,0,0,0.05), 0 4px 16px rgba(0,0,0,0.04)";
+
+/* ═══════════════════════════════════════════════
+   Helper Functions
+═══════════════════════════════════════════════ */
 function shortenForChip(text: string, max = 14) {
   const trimmed = text.trim();
   return trimmed.length > max ? `${trimmed.slice(0, max)}…` : trimmed;
 }
 
-function makeKeyword(text: string, sourceText = text, sourceKind: KeywordItem["sourceKind"] = "analysis"): KeywordItem {
-  return {
-    text: shortenForChip(text),
-    sourceText,
-    sourceKind,
-    confidence: 0,
-  };
+function makeKeyword(
+  text: string,
+  sourceText = text,
+  sourceKind: KeywordItem["sourceKind"] = "analysis",
+): KeywordItem {
+  return { text: shortenForChip(text), sourceText, sourceKind, confidence: 0 };
 }
 
 function makeMindmapGroup(
-  section: { a?: string; b?: string } | undefined,
   keywords: string[] | undefined,
   sectionEvidence?: KeywordEvidenceEntry[],
 ) {
   const evidenceMap = new Map(
     (sectionEvidence ?? []).map(({ keyword, evidence }) => [keyword, evidence[0] ?? null])
   );
-
-  const makeKwWithEvidence = (text: string, sourceText = text): KeywordItem => {
+  const makeKwWithEvidence = (text: string): KeywordItem => {
     const ev = evidenceMap.get(text);
     return {
       text: shortenForChip(text),
-      sourceText: ev?.text ?? sourceText,
+      sourceText: ev?.text ?? text,
       sourceKind: ev?.text ? "input" : "analysis",
       confidence: ev?.confidencePercent ?? 0,
     };
   };
 
-  return {
-    shared: (keywords ?? []).slice(0, 3).map((k) => makeKwWithEvidence(k)),
-    meOnly: section?.a ? [makeKeyword(section.a)] : [],
-    partnerOnly: section?.b ? [makeKeyword(section.b)] : [],
-  };
+  // evidence의 speaker 필드(A | B | SELF)로 A전용 / B전용 / 공통 분류
+  const meOnly: KeywordItem[]      = [];
+  const partnerOnly: KeywordItem[] = [];
+  const shared: KeywordItem[]      = [];
+
+  for (const kw of (keywords ?? [])) {
+    const ev   = evidenceMap.get(kw);
+    const item = makeKwWithEvidence(kw);
+    if (ev?.speaker === "A") meOnly.push(item);
+    else if (ev?.speaker === "B") partnerOnly.push(item);
+    else shared.push(item); // SELF / 증거 없음 → 공통 영역
+  }
+
+  return { shared, meOnly, partnerOnly };
 }
 
 function buildMindmapData({
-  llmResult,
-  aName,
-  bName,
-  relationship,
-  date,
-  evidenceResult,
+  llmResult, aName, bName, relationship, date, evidenceResult,
 }: {
-  llmResult: LlmResult;
-  aName: string;
-  bName: string;
-  relationship: string;
-  date: string;
-  evidenceResult: LlmEvidenceResult | null;
+  llmResult: LlmResult; aName: string; bName: string;
+  relationship: string; date: string; evidenceResult: LlmEvidenceResult | null;
 }): DashboardData {
   const { sections, diagramKeywords, resultText } = llmResult;
   const ev = evidenceResult?.keywordEvidence;
 
-  const firstFact = diagramKeywords.facts[0] || sections.facts.a || sections.facts.b || "";
-  const factKeywordEvidence = ev?.facts?.find(({ keyword }) => keyword === firstFact)?.evidence[0] ?? null;
-  const interpretationBranch =
-    firstFact && (sections.interpretations.a || sections.interpretations.b)
-      ? [{
-          id: "api-interpretation",
-          fact: makeKeyword(
-            firstFact,
-            factKeywordEvidence?.text ?? sections.facts.a ?? sections.facts.b ?? firstFact,
-            factKeywordEvidence?.text ? "input" : "analysis",
-          ),
-          me: sections.interpretations.a ? [makeKeyword(sections.interpretations.a)] : [],
-          partner: sections.interpretations.b ? [makeKeyword(sections.interpretations.b)] : [],
-        }]
-      : [];
+  const firstFact = diagramKeywords.facts[0] || diagramKeywords.coreConflict[0] || "";
+  const factEv = ev?.facts?.find(({ keyword }) => keyword === firstFact)?.evidence[0] ?? null;
+
+  const interpKws = diagramKeywords.interpretations;
+  const interpEvidenceMap = new Map(
+    (ev?.interpretations ?? []).map(({ keyword, evidence }) => [keyword, evidence[0] ?? null])
+  );
+  const makeInterpKw = (kw: string): KeywordItem => {
+    const e = interpEvidenceMap.get(kw);
+    return { text: shortenForChip(kw), sourceText: e?.text ?? kw, sourceKind: e?.text ? "input" : "analysis", confidence: e?.confidencePercent ?? 0 };
+  };
+  const interpMe      = interpKws.filter((_, i) => i % 2 === 0).map(makeInterpKw);
+  const interpPartner = interpKws.filter((_, i) => i % 2 === 1).map(makeInterpKw);
+
+  const interpretationBranch = firstFact
+    ? [{
+        id: "api-interpretation",
+        fact: {
+          text: shortenForChip(firstFact),
+          sourceText: factEv?.text ?? firstFact,
+          sourceKind: (factEv?.text ? "input" : "analysis") as KeywordItem["sourceKind"],
+          confidence: factEv?.confidencePercent ?? 0,
+        },
+        me: interpMe,
+        partner: interpPartner,
+      }]
+    : [];
 
   return {
     title: diagramKeywords.coreConflict[0] || "분석 결과",
-    date,
-    relationship,
+    date, relationship,
     me: { name: aName },
     partner: { name: bName },
     mindmap: {
-      fact: makeMindmapGroup(sections.facts, diagramKeywords.facts, ev?.facts),
-      interpretation: makeMindmapGroup(sections.interpretations, diagramKeywords.interpretations, ev?.interpretations),
-      emotion: makeMindmapGroup(sections.emotions, diagramKeywords.emotions, ev?.emotions),
-      request: makeMindmapGroup(sections.needs, diagramKeywords.needs, ev?.needs),
+      fact:           makeMindmapGroup(diagramKeywords.facts,           ev?.facts),
+      interpretation: makeMindmapGroup(diagramKeywords.interpretations, ev?.interpretations),
+      emotion:        makeMindmapGroup(diagramKeywords.emotions,        ev?.emotions),
+      request:        makeMindmapGroup(diagramKeywords.needs,           ev?.needs),
     },
     interpretationBranches: interpretationBranch,
-    conflictPeak: {
-      type: "",
-      category: "",
-      description: "",
-    },
+    conflictPeak: { type: "", category: "", description: "" },
     aiRestatements: {
       fact: { me: sections.facts.a || "", partner: sections.facts.b || "" },
       interpretation: { me: sections.interpretations.a || "", partner: sections.interpretations.b || "" },
@@ -210,49 +240,481 @@ function buildMindmapData({
   };
 }
 
-/* ── Portal Tooltip ── */
-function FixedTooltip({ node, onClose }: { node: SelectedNode; onClose: () => void }) {
-  const w = 272, margin = 12;
-  const cx = node.rect.left + node.rect.width / 2;
-  let left = Math.max(margin, Math.min(cx - w / 2, window.innerWidth - w - margin));
-  const below = window.innerHeight - node.rect.bottom > 160;
-  const top = below ? node.rect.bottom + 8 : node.rect.top - 8;
+/* ═══════════════════════════════════════════════
+   Skeleton Loading
+═══════════════════════════════════════════════ */
+function Bone({ className }: { className?: string }) {
+  return <div className={`animate-pulse bg-[#E8E8EC] rounded-xl ${className ?? ""}`} />;
+}
 
-  return createPortal(
-    <motion.div
-      initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.94 }} transition={{ duration: 0.14 }}
-      style={{ position: "fixed", left, top, width: w, zIndex: 99999, transform: below ? "none" : "translateY(-100%)" }}
-      className="pointer-events-auto" onClick={(e) => e.stopPropagation()}
-    >
-      <div className="bg-[#1C1C1E] text-white rounded-2xl p-4 shadow-2xl border border-white/10 relative">
-        <div className="flex items-center justify-between mb-2.5 pr-6">
-          <div className="flex items-center gap-1.5">
-            <Quote size={11} className="text-[#ffd1da]" strokeWidth={3} />
-            <p className="font-semibold text-[11.5px] text-white/70">
-              {node.sourceKind === "input" ? "입력된 원문" : "AI 분석 문장"}
-            </p>
-          </div>
-          {node.confidence > 0 && (
-            <div className="flex items-center gap-1 px-2 py-0.5 bg-[#ffd1da]/20 rounded-full">
-              <div className="w-1.5 h-1.5 rounded-full bg-[#ffd1da]" />
-              <span className="text-[10.5px] font-semibold text-[#ffd1da]">신뢰도 {Math.min(node.confidence, 99)}%</span>
-            </div>
-          )}
+function DashboardSkeleton() {
+  return (
+    <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[680px] mx-auto">
+      <div className="h-[200px] bg-[#1A1828] mb-px" />
+      <div className="px-5 py-6 space-y-3">
+        <Bone className="h-5 w-24 rounded-full" />
+        <Bone className="h-40 w-full rounded-2xl" />
+        <div className="grid grid-cols-2 gap-2.5 pt-1">
+          {[...Array(4)].map((_, i) => <Bone key={i} className="h-28 rounded-2xl" />)}
         </div>
-        <p className="text-[12.5px] text-white/90 leading-relaxed break-keep">"{node.sourceText}"</p>
-        <button onClick={(e) => { e.stopPropagation(); onClose(); }}
-          className="absolute top-3 right-3 p-1 text-white/40 hover:text-white hover:bg-white/10 rounded-full transition-colors">
-          <X size={13} strokeWidth={2.5} />
-        </button>
       </div>
-    </motion.div>,
-    document.body
+      <div className="px-5 pb-5 space-y-3">
+        <Bone className="h-5 w-32 rounded-full" />
+        <Bone className="h-36 w-full rounded-2xl" />
+        <Bone className="h-36 w-full rounded-2xl" />
+      </div>
+    </div>
   );
 }
 
-/* ── Keyword Button ── */
-function KwBtn({ item, className, style, onSelect, isSelected }: {
+/* ═══════════════════════════════════════════════
+   Section Header (refined)
+═══════════════════════════════════════════════ */
+function SectionLabel({ label, icon: Icon, color = "#A1A1AA" }: {
+  label: string;
+  icon?: React.ElementType;
+  color?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      {Icon && (
+        <div className="w-5 h-5 flex items-center justify-center" style={{ color }}>
+          <Icon size={13} strokeWidth={2.5} />
+        </div>
+      )}
+      <span
+        className="text-[10.5px] font-black tracking-[0.11em] uppercase"
+        style={{ color }}
+      >
+        {label}
+      </span>
+      <div className="flex-1 h-px ml-1" style={{ background: `${color}30` }} />
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FEIN 노드 내부 — Venn 다이어그램
+═══════════════════════════════════════════════ */
+interface SvgLine { x1: number; y1: number; x2: number; y2: number; color: string; }
+
+function FeinNodeVenn({
+  catData, cat, aLabel, bLabel, pick, sel,
+}: {
+  catData: { meOnly: KeywordItem[]; shared: KeywordItem[]; partnerOnly: KeywordItem[] };
+  cat: typeof CATEGORIES[number];
+  aLabel: string; bLabel: string;
+  pick: (item: KeywordItem, rect: DOMRect, side: "A" | "B" | "shared") => void;
+  sel: SelectedNode | null;
+}) {
+  return (
+    <div style={{ containerType: "inline-size" }}>
+      {/* 3컬럼: [A 전용] | [공통] | [B 전용] */}
+      <div className="grid grid-cols-3">
+
+        {/* ── A 전용 구역 ── */}
+        <div className="flex flex-col items-center gap-1 px-1.5 pt-2.5 pb-3"
+             style={{
+               background: `${A_COLOR}09`,
+               borderRight: `1px solid ${A_COLOR}18`,
+             }}>
+          {/* A 이름 레이블 */}
+          <span className="text-[7.5px] font-black tracking-wide mb-1 text-center w-full truncate"
+                style={{ color: A_COLOR }}>
+            {aLabel}
+          </span>
+          {catData.meOnly.length > 0
+            ? catData.meOnly.map((item, i) => (
+                <KwBtn key={i} item={item}
+                  onSelect={(it, rect) => pick(it, rect, "A")}
+                  isSelected={sel?.text === item.text}
+                  className="w-full px-1.5 py-[5px] rounded-lg text-center break-keep leading-tight border hover:opacity-80 transition-opacity"
+                  style={{
+                    fontSize: "calc(0.40cqw + 6.5px)",
+                    color: A_COLOR,
+                    background: A_LIGHT,
+                    borderColor: `${A_COLOR}25`,
+                  }} />
+              ))
+            : <span className="text-[#D4D4D8] py-1 text-[10px]">—</span>
+          }
+        </div>
+
+        {/* ── 공통(교집합) 구역 ── */}
+        <div className="flex flex-col items-center gap-1 px-1.5 pt-2.5 pb-3">
+          {/* 중앙 세 점 아이콘 */}
+          <div className="flex items-center gap-[3px] mb-1 mt-[1px]">
+            <div className="w-[4px] h-[4px] rounded-full flex-shrink-0"
+                 style={{ background: A_COLOR, opacity: 0.45 }} />
+            <div className="w-[5px] h-[5px] rounded-full flex-shrink-0"
+                 style={{ background: cat.color }} />
+            <div className="w-[4px] h-[4px] rounded-full flex-shrink-0"
+                 style={{ background: B_COLOR, opacity: 0.45 }} />
+          </div>
+          {catData.shared.length > 0
+            ? catData.shared.map((item, i) => (
+                <KwBtn key={i} item={item}
+                  onSelect={(it, rect) => pick(it, rect, "shared")}
+                  isSelected={sel?.text === item.text}
+                  className="w-full px-1.5 py-[5px] rounded-lg font-bold text-white text-center break-keep leading-tight hover:opacity-80 transition-opacity"
+                  style={{
+                    fontSize: "calc(0.40cqw + 6.5px)",
+                    background: cat.color,
+                  }} />
+              ))
+            : <span className="text-[#D4D4D8] py-1 text-[10px]">—</span>
+          }
+        </div>
+
+        {/* ── B 전용 구역 ── */}
+        <div className="flex flex-col items-center gap-1 px-1.5 pt-2.5 pb-3"
+             style={{
+               background: `${B_COLOR}09`,
+               borderLeft: `1px solid ${B_COLOR}18`,
+             }}>
+          {/* B 이름 레이블 */}
+          <span className="text-[7.5px] font-black tracking-wide mb-1 text-center w-full truncate"
+                style={{ color: B_COLOR }}>
+            {bLabel}
+          </span>
+          {catData.partnerOnly.length > 0
+            ? catData.partnerOnly.map((item, i) => (
+                <KwBtn key={i} item={item}
+                  onSelect={(it, rect) => pick(it, rect, "B")}
+                  isSelected={sel?.text === item.text}
+                  className="w-full px-1.5 py-[5px] rounded-lg text-center break-keep leading-tight border hover:opacity-80 transition-opacity"
+                  style={{
+                    fontSize: "calc(0.40cqw + 6.5px)",
+                    color: B_COLOR,
+                    background: B_LIGHT,
+                    borderColor: `${B_COLOR}25`,
+                  }} />
+              ))
+            : <span className="text-[#D4D4D8] py-1 text-[10px]">—</span>
+          }
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FEIN 노드 내부 — 해석 분기 트리
+═══════════════════════════════════════════════ */
+function FeinNodeInterp({
+  branches, aLabel, bLabel, pick, sel,
+}: {
+  branches: DashboardData["interpretationBranches"];
+  aLabel: string; bLabel: string;
+  pick: (item: KeywordItem, rect: DOMRect, side: "A" | "B" | "shared") => void;
+  sel: SelectedNode | null;
+}) {
+  if (branches.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center py-6">
+        <span className="text-[12px] text-[#AEAEB2]">—</span>
+      </div>
+    );
+  }
+  return (
+    <div className="px-3 pb-4 pt-3" style={{ containerType: "inline-size" }}>
+      {branches.map((branch) => (
+        <div key={branch.id} className="flex flex-col items-center">
+          {/* 허브 칩 */}
+          <KwBtn item={branch.fact} isSelected={sel?.text === branch.fact.text}
+            onSelect={(it, rect) => pick(it, rect, "shared")}
+            className="px-2.5 py-1.5 rounded-xl font-bold text-center break-keep border"
+            style={{
+              fontSize: "calc(0.52cqw + 7.5px)",
+              color: "#C9485B",
+              background: "#FFF5F7",
+              borderColor: "#FFCDD7",
+            }}
+          />
+
+          {/* 분기선 */}
+          <div className="relative w-full pointer-events-none" style={{ height: 24 }}>
+            <div className="absolute top-0 left-1/2 w-px h-3 -translate-x-1/2" style={{ background: "#D4D4D8" }} />
+            <div className="absolute" style={{ top: 12, left: "25%", right: "25%", height: 1, background: "#D4D4D8" }} />
+            <div className="absolute w-px h-3" style={{ top: 12, left: "25%", background: "#D4D4D8" }} />
+            <div className="absolute w-px h-3" style={{ top: 12, right: "25%", background: "#D4D4D8" }} />
+          </div>
+
+          {/* A / B 컬럼 */}
+          <div className="w-full grid grid-cols-2 gap-1.5">
+            {/* A */}
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[7.5px] font-black tracking-wider uppercase mb-0.5" style={{ color: A_COLOR }}>
+                {aLabel.length > 5 ? aLabel.slice(0, 5) : aLabel}
+              </span>
+              {branch.me.length > 0
+                ? branch.me.map((item, i) => (
+                    <KwBtn key={i} item={item} isSelected={sel?.text === item.text}
+                      onSelect={(it, rect) => pick(it, rect, "A")}
+                      className="w-full px-2 py-1 rounded-lg text-center break-keep leading-snug border transition-colors"
+                      style={{
+                        fontSize: "calc(0.44cqw + 7px)",
+                        color: A_COLOR,
+                        background: A_LIGHT,
+                        borderColor: `${A_COLOR}28`,
+                      }} />
+                  ))
+                : <span className="text-[10px] text-[#C7C7CC] py-1.5">—</span>
+              }
+            </div>
+            {/* B */}
+            <div className="flex flex-col items-center gap-1">
+              <span className="text-[7.5px] font-black tracking-wider uppercase mb-0.5" style={{ color: B_COLOR }}>
+                {bLabel.length > 5 ? bLabel.slice(0, 5) : bLabel}
+              </span>
+              {branch.partner.length > 0
+                ? branch.partner.map((item, i) => (
+                    <KwBtn key={i} item={item} isSelected={sel?.text === item.text}
+                      onSelect={(it, rect) => pick(it, rect, "B")}
+                      className="w-full px-2 py-1 rounded-lg text-center break-keep leading-snug border transition-colors"
+                      style={{
+                        fontSize: "calc(0.44cqw + 7px)",
+                        color: B_COLOR,
+                        background: B_LIGHT,
+                        borderColor: `${B_COLOR}28`,
+                      }} />
+                  ))
+                : <span className="text-[10px] text-[#C7C7CC] py-1.5">—</span>
+              }
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   FEIN 다이어그램 (SVG 연결선 + 노드)
+═══════════════════════════════════════════════ */
+function FeinDiagram({
+  llmResult, aName, bName, myRole, mindmapData,
+}: {
+  llmResult: LlmResult; aName: string; bName: string;
+  myRole: "A" | "B" | null; mindmapData: DashboardData;
+}) {
+  const [sel, setSel] = useState<SelectedNode | null>(null);
+  const { diagramKeywords } = llmResult;
+
+  const wrapRef  = useRef<HTMLDivElement>(null);
+  const hubRef   = useRef<HTMLDivElement>(null);
+  const nodeRefs = useRef<Array<HTMLDivElement | null>>([null, null, null, null]);
+  const [lines,  setLines]  = useState<SvgLine[]>([]);
+  const [svgDim, setSvgDim] = useState({ w: 0, h: 0 });
+
+  const measure = useCallback(() => {
+    const wrap = wrapRef.current, hub = hubRef.current;
+    if (!wrap || !hub) return;
+    const wr = wrap.getBoundingClientRect();
+    const hr = hub.getBoundingClientRect();
+    const hx = hr.left + hr.width / 2 - wr.left;
+    const hy = hr.bottom - wr.top;
+    const next: SvgLine[] = [];
+    nodeRefs.current.forEach((nd, i) => {
+      if (!nd) return;
+      const nr = nd.getBoundingClientRect();
+      next.push({ x1: hx, y1: hy, x2: nr.left + nr.width / 2 - wr.left, y2: nr.top - wr.top, color: CATEGORIES[i].color });
+    });
+    setLines(next);
+    setSvgDim({ w: wr.width, h: wr.height });
+  }, []);
+
+  useEffect(() => { const id = setTimeout(measure, 160); return () => clearTimeout(id); }, [measure, llmResult]);
+  useEffect(() => {
+    const el = wrapRef.current; if (!el) return;
+    const ro = new ResizeObserver(measure); ro.observe(el); return () => ro.disconnect();
+  }, [measure]);
+  useEffect(() => {
+    const off = () => setSel(null);
+    document.addEventListener("click", off); window.addEventListener("scroll", off, true);
+    return () => { document.removeEventListener("click", off); window.removeEventListener("scroll", off, true); };
+  }, []);
+
+  const pick = (item: KeywordItem, rect: DOMRect, side: "A" | "B" | "shared") =>
+    setSel(prev => prev?.text === item.text ? null : { ...item, rect, side });
+
+  const getMmCat = (catId: FeinCatId) => mindmapData.mindmap[MINDMAP_KEY_BY_CATEGORY[catId]];
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <AnimatePresence>
+        {sel && <FixedTooltip node={sel} myRole={myRole} onClose={() => setSel(null)} />}
+      </AnimatePresence>
+
+      {/* SVG 연결선 */}
+      {svgDim.h > 0 && (
+        <svg className="absolute inset-0 pointer-events-none" style={{ width: svgDim.w, height: svgDim.h, zIndex: 0 }}>
+          <defs>
+            {CATEGORIES.map((cat, i) => (
+              <linearGradient key={i} id={`lg-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor={cat.color} stopOpacity="0.55" />
+                <stop offset="100%" stopColor={cat.color} stopOpacity="0.15" />
+              </linearGradient>
+            ))}
+          </defs>
+          {lines.map((l, i) => (
+            <g key={i}>
+              <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
+                stroke={`url(#lg-${i})`} strokeWidth="1.5" strokeDasharray="5 5" strokeLinecap="round" />
+              <circle cx={l.x2} cy={l.y2} r="3.5" fill={l.color} opacity="0.5" />
+            </g>
+          ))}
+          {lines[0] && <circle cx={lines[0].x1} cy={lines[0].y1} r="6" fill="#C9485B" opacity="0.15" />}
+        </svg>
+      )}
+
+      {/* 핵심 갈등 허브 */}
+      <motion.div ref={hubRef}
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+        className="relative z-10 mb-5"
+      >
+        <div className="rounded-2xl px-5 py-4 text-center border border-[#FFD0DA]"
+          style={{
+            background: "linear-gradient(135deg, #FFF8FA 0%, #FFF0F3 100%)",
+            boxShadow: "0 2px 20px rgba(201,72,91,0.10), 0 1px 4px rgba(201,72,91,0.06)",
+          }}>
+          <p className="text-[9px] font-black text-[#C9485B]/50 tracking-[0.18em] uppercase mb-2.5">핵심 갈등</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {diagramKeywords.coreConflict.map((kw) => (
+              <span key={kw}
+                className="px-3.5 py-1.5 bg-white border border-[#FFD0DA] rounded-full text-[13px] font-bold text-[#C9485B]"
+                style={{ boxShadow: "0 1px 6px rgba(201,72,91,0.12)" }}>
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      </motion.div>
+
+      {/* 2×2 FEIN 노드 */}
+      <div className="grid grid-cols-2 gap-3 relative z-10">
+        {CATEGORIES.map((cat, idx) => {
+          const catId    = cat.id as FeinCatId;
+          const Icon     = cat.icon;
+          const isInterp = catId === "interpretations";
+
+          return (
+            <motion.div
+              key={cat.id}
+              ref={(el) => { nodeRefs.current[idx] = el; }}
+              initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.18 + idx * 0.07, type: "spring", stiffness: 260, damping: 24 }}
+              className="bg-white rounded-2xl border overflow-hidden flex flex-col"
+              style={{
+                borderColor: `${cat.color}30`,
+                boxShadow: `0 2px 14px ${cat.color}12, 0 1px 4px rgba(0,0,0,0.04)`,
+              }}
+            >
+              {/* 카드 헤더 */}
+              <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0"
+                style={{
+                  background: cat.bg,
+                  borderBottom: `1px solid ${cat.color}20`,
+                }}>
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: `${cat.color}25`, color: cat.color }}>
+                  <Icon size={10} strokeWidth={2.5} />
+                </div>
+                <span className="text-[11px] font-bold" style={{ color: cat.color }}>
+                  {cat.label}
+                </span>
+                <span className="ml-auto text-[8px] font-semibold opacity-45 tracking-wide" style={{ color: cat.color }}>
+                  {cat.en}
+                </span>
+              </div>
+
+              {/* 시각화 */}
+              {isInterp ? (
+                <FeinNodeInterp branches={mindmapData.interpretationBranches} aLabel={aName} bLabel={bName} pick={pick} sel={sel} />
+              ) : (
+                <FeinNodeVenn catData={getMmCat(catId)} cat={cat} aLabel={aName} bLabel={bName} pick={pick} sel={sel} />
+              )}
+            </motion.div>
+          );
+        })}
+      </div>
+
+      <p className="text-center text-[10px] text-[#B0B0BA] mt-3 tracking-wide">
+        키워드를 탭하면 원문을 확인할 수 있어요
+      </p>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Fixed Tooltip
+═══════════════════════════════════════════════ */
+function FixedTooltip({ node, myRole, onClose }: {
+  node: SelectedNode; myRole?: "A" | "B" | null; onClose: () => void;
+}) {
+  const w = 272, margin = 12;
+  const cx = node.rect.left + node.rect.width / 2;
+  const left = Math.max(margin, Math.min(cx - w / 2, window.innerWidth - w - margin));
+  const below = window.innerHeight - node.rect.bottom > 160;
+  const top = below ? node.rect.bottom + 8 : node.rect.top - 8;
+
+  const canSeeSource =
+    node.sourceKind !== "input" ||
+    !node.side || node.side === "shared" ||
+    !myRole ||
+    (node.side === "A" && myRole === "A") ||
+    (node.side === "B" && myRole === "B");
+
+  return createPortal(
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95, y: below ? -4 : 4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.15 }}
+      style={{ position: "fixed", left, top, width: w, zIndex: 99999, transform: below ? "none" : "translateY(-100%)" }}
+      className="pointer-events-auto"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="rounded-2xl p-4 border border-white/10 relative overflow-hidden"
+           style={{ background: "#17161F", boxShadow: "0 8px 40px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.16)" }}>
+        {/* 헤더 */}
+        <div className="flex items-center gap-2 mb-3 pr-6">
+          <div className="w-5 h-5 rounded-md bg-white/10 flex items-center justify-center flex-shrink-0">
+            <Quote size={10} className="text-white/50" strokeWidth={3} />
+          </div>
+          <p className="text-[11px] font-semibold text-white/50">
+            {node.sourceKind === "input" ? "입력된 원문" : "AI 분석 문장"}
+          </p>
+          {node.confidence > 0 && (
+            <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: "#FFD0DA22", color: "#FF8FAA" }}>
+              {Math.min(node.confidence, 99)}%
+            </span>
+          )}
+        </div>
+        {canSeeSource && (
+          <p className="text-[13px] text-white/85 leading-relaxed break-keep">
+            "{node.sourceText}"
+          </p>
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          className="absolute top-3 right-3 p-1.5 text-white/30 hover:text-white/70 hover:bg-white/10 rounded-full transition-colors"
+        >
+          <X size={12} strokeWidth={2.5} />
+        </button>
+      </div>
+    </motion.div>,
+    document.body,
+  );
+}
+
+/* ═══════════════════════════════════════════════
+   Keyword Button
+═══════════════════════════════════════════════ */
+function KwBtn({
+  item, className, style, onSelect, isSelected,
+}: {
   item: KeywordItem; className?: string; style?: React.CSSProperties;
   onSelect: (item: KeywordItem, rect: DOMRect) => void; isSelected: boolean;
 }) {
@@ -260,375 +722,235 @@ function KwBtn({ item, className, style, onSelect, isSelected }: {
     <button
       onClick={(e) => { e.stopPropagation(); onSelect(item, e.currentTarget.getBoundingClientRect()); }}
       style={style}
-      className={`${className ?? ""} ${isSelected ? "ring-2 ring-[#ffd1da]/70 ring-offset-1" : ""} transition-all active:scale-95`}
+      className={`${className ?? ""} ${isSelected ? "ring-2 ring-offset-1 ring-[#C9485B]/40" : ""} transition-all active:scale-95`}
     >
       {item.text}
     </button>
   );
 }
 
-/* ── VennCard ── */
-function VennCard({ catData, cat, data, pick, sel }: {
-  catData: { meOnly: KeywordItem[]; shared: KeywordItem[]; partnerOnly: KeywordItem[] };
-  cat: { id: string; label: string; en: string; color: string; bg: string };
-  data: DashboardData;
-  pick: (item: KeywordItem, rect: DOMRect) => void;
-  sel: SelectedNode | null;
-}) {
+/* ═══════════════════════════════════════════════
+   Tension Card (갈등 포인트)
+═══════════════════════════════════════════════ */
+function TensionCard({
+  tension, aName, bName,
+}: { tension: DualAnalysisResult["tensions"][number]; aName: string; bName: string }) {
+  const style = TENSION_STYLES[tension.type] ?? { color: "#636366", bg: "#F5F5F7" };
   return (
-    <TabsContent value={cat.id} className="mt-0 outline-none">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.97 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.25 }}
-        className="bg-white rounded-2xl border border-[#EBEBF0] overflow-hidden"
-      >
-        {/* ── Header ── */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#F5F5F7]">
-          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: cat.color }} />
-          <span className="text-[13px] font-bold text-[#1C1C1E]">{cat.label}</span>
-          <span className="text-[11px]" style={{ color: cat.color }}>{cat.en}</span>
-        </div>
+    <div className="bg-white rounded-2xl border border-[#EAEAEF] overflow-hidden"
+         style={{ boxShadow: CARD_SHADOW }}>
+      {/* 상단 — 유형 칩 */}
+      <div className="px-4 pt-4 pb-0">
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full mb-3"
+              style={{ backgroundColor: style.bg }}>
+          <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: style.color }} />
+          <span className="text-[11px] font-bold" style={{ color: style.color }}>
+            {tension.displayName ?? tension.type}
+          </span>
+        </span>
+      </div>
 
-        {/* ── Venn body: px-3 so circles stay large but have a little card-edge gap ── */}
-        <div className="px-3 pt-3 pb-4">
+      {/* 분석 텍스트 */}
+      <p className="px-4 pb-3.5 text-[13px] text-[#3A3A42] leading-[1.85] break-keep">
+        {tension.rationale}
+      </p>
 
-          <div className="flex items-center mb-2 mx-auto" style={{ maxWidth: 720 }}>
-            <div className="flex-[3] flex justify-center">
-              <span className="text-[11px] font-bold" style={{ color: "#f07090" }}>{data.me.name}</span>
-            </div>
-            <div className="flex-[2] flex justify-center">
-              <span className="text-[10px] text-[#C7C7CC]">공통</span>
-            </div>
-            <div className="flex-[3] flex justify-center">
-              <span className="text-[11px] font-bold" style={{ color: "#7b87ff" }}>{data.partner.name}</span>
-            </div>
-          </div>
-
-          <div
-            className="relative w-full mx-auto"
-            style={{ maxWidth: 720, aspectRatio: "8 / 5", containerType: "inline-size" }}
-          >
-
-            {/* Left circle */}
-            <div style={{
-              position: "absolute", left: "0%", top: "50%",
-              width: "62.5%", aspectRatio: "1 / 1",
-              transform: "translateY(-50%)", borderRadius: "50%",
-              border: "1.5px solid rgba(255,140,160,0.55)",
-              background: "rgba(255,222,230,0.45)",
-              pointerEvents: "none", zIndex: 0,
-            }} />
-
-            {/* Right circle */}
-            <div style={{
-              position: "absolute", right: "0%", top: "50%",
-              width: "62.5%", aspectRatio: "1 / 1",
-              transform: "translateY(-50%)", borderRadius: "50%",
-              border: "1.5px solid rgba(110,120,255,0.55)",
-              background: "rgba(210,215,255,0.45)",
-              pointerEvents: "none", zIndex: 0,
-            }} />
-
-            <div className="absolute inset-0 flex items-stretch z-10"
-                 style={{ paddingTop: 6, paddingBottom: 6 }}>
-
-              {/* Left — me only */}
-              <div className="flex-[3] flex flex-col items-center justify-center gap-2"
-                   style={{ paddingInline: "8px 5px" }}>
-                {catData.meOnly.map((item, i) => (
-                  <KwBtn key={`me-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-pink-200 rounded-xl font-medium text-[#222] text-center break-keep leading-snug hover:border-pink-400 hover:bg-pink-50/40 transition-colors"
-                    style={{ fontSize: "calc(0.532cqw + 7.667px)" }} />
-                ))}
-              </div>
-
-              {/* Center — shared */}
-              <div className="flex-[2] flex flex-col items-center justify-center gap-2"
-                   style={{ paddingInline: "3px" }}>
-                {catData.shared.length === 0 ? (
-                  <span className="text-[#D1D1D6] text-center leading-snug"
-                    style={{ fontSize: "calc(0.417cqw + 6px)" }}>공통<br/>없음</span>
-                ) : catData.shared.map((item, i) => (
-                  <KwBtn key={`sh-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2 py-1.5 rounded-xl font-bold text-white text-center break-keep leading-snug hover:opacity-80 transition-opacity"
-                    style={{ backgroundColor: cat.color, fontSize: "calc(0.463cqw + 6.667px)" }} />
-                ))}
-              </div>
-
-              {/* Right — partner only */}
-              <div className="flex-[3] flex flex-col items-center justify-center gap-2"
-                   style={{ paddingInline: "5px 8px" }}>
-                {catData.partnerOnly.map((item, i) => (
-                  <KwBtn key={`pt-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                    className="w-fit max-w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-xl font-medium text-[#222] text-center break-keep leading-snug hover:border-indigo-400 hover:bg-indigo-50/40 transition-colors"
-                    style={{ fontSize: "calc(0.532cqw + 7.667px)" }} />
-                ))}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </motion.div>
-    </TabsContent>
-  );
-}
-
-/* ── Mindmap Visualization ── */
-function MindmapVisualization({ data }: { data: DashboardData }) {
-  const [activeTab, setActiveTab] = useState("facts");
-  const [sel, setSel] = useState<SelectedNode | null>(null);
-
-  const pick = (item: KeywordItem, rect: DOMRect) => setSel(sel?.text === item.text ? null : { ...item, rect });
-
-  useEffect(() => {
-    const dismiss = () => setSel(null);
-    document.addEventListener("click", dismiss);
-    window.addEventListener("scroll", dismiss, true);
-    return () => { document.removeEventListener("click", dismiss); window.removeEventListener("scroll", dismiss, true); };
-  }, []);
-  useEffect(() => { setSel(null); }, [activeTab]);
-
-  return (
-    <div className="px-4 sm:px-5 py-5">
-      <AnimatePresence>{sel && <FixedTooltip node={sel} onClose={() => setSel(null)} />}</AnimatePresence>
-
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="w-full justify-start h-auto bg-transparent border-b border-[#EBEBF0] rounded-none p-0 mb-5 overflow-x-auto flex-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {CATEGORIES.map((cat) => (
-            <TabsTrigger key={cat.id} value={cat.id}
-              className="px-4 py-3 rounded-none border-b-2 font-semibold text-[13.5px] whitespace-nowrap -mb-[1px] data-[state=active]:text-[#1C1C1E] data-[state=inactive]:border-transparent data-[state=inactive]:text-[#AEAEB2]"
-              style={{ borderColor: activeTab === cat.id ? cat.color : "transparent" }}>
-              {cat.label} {cat.en}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        {CATEGORIES.map((cat) => {
-          /* Interpretation tab — tree view */
-          if (cat.id === "interpretations") {
+      {/* 관련 발화자 */}
+      {tension.evidence.length > 0 && (
+        <div className="px-4 pb-3.5 pt-2 flex flex-wrap gap-1.5 border-t border-[#F2F2F5]">
+          {Array.from(new Set(tension.evidence.map((ev) => ev.speaker))).map((speaker) => {
+            const isA = speaker === "A";
+            const name = isA ? aName : bName;
+            const color = isA ? A_COLOR : B_COLOR;
+            const bg = isA ? A_LIGHT : B_LIGHT;
             return (
-              <TabsContent key={cat.id} value={cat.id} className="mt-0 outline-none">
-                <motion.div initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.25 }}
-                  className="w-full py-8 px-4 flex flex-col items-center bg-white rounded-2xl border border-[#EBEBF0]">
-                  <div className="mb-5 px-3 py-1 rounded-full text-[11.5px] font-semibold" style={{ backgroundColor: cat.bg, color: cat.color }}>
-                    같은 사실, 다른 해석
-                  </div>
-                  <div className="w-full flex flex-col items-center gap-12">
-                    {data.interpretationBranches.map((branch, idx) => (
-                      <div key={branch.id} className="w-full max-w-[340px] flex flex-col items-center">
-                        <KwBtn item={branch.fact} onSelect={pick} isSelected={sel?.text === branch.fact.text}
-                          className="px-4 py-2.5 bg-[#fff5f7] border border-[#ffd1da] rounded-xl text-[13px] font-semibold text-[#c9485b] hover:scale-[1.02] text-center break-keep" />
-                        <div className="relative w-full h-10 flex justify-center pointer-events-none">
-                          <div className="w-[2px] h-5 bg-[#E5E5EA]" />
-                          <div className="absolute top-5 w-[76%] h-[2px] bg-[#E5E5EA]" />
-                          <div className="absolute top-5 left-[12%] w-[2px] h-5 bg-[#E5E5EA]" />
-                          <div className="absolute top-5 right-[12%] w-[2px] h-5 bg-[#E5E5EA]" />
-                        </div>
-                        <div className="w-full flex justify-between mt-[-2px]">
-                          <div className="w-[48%] flex flex-col items-center gap-2.5">
-                            {idx === 0 && (
-                              <div className="flex items-center gap-1 mb-1">
-                                <div className="w-4 h-4 rounded-full bg-pink-100 text-pink-500 flex items-center justify-center font-bold text-[9px]">{data.me.name.charAt(0)}</div>
-                                <span className="text-[11px] font-semibold text-[#636366]">{data.me.name}의 시각</span>
-                              </div>
-                            )}
-                            {branch.me.map((item, i) => (
-                              <KwBtn key={`me-${branch.id}-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                                className="w-full px-3 py-2.5 bg-white border border-pink-100 rounded-2xl text-[12px] font-medium text-[#1C1C1E] text-center leading-snug break-keep hover:border-pink-300 hover:bg-pink-50/30" />
-                            ))}
-                          </div>
-                          <div className="w-[48%] flex flex-col items-center gap-2.5">
-                            {idx === 0 && (
-                              <div className="flex items-center gap-1 mb-1 justify-end">
-                                <span className="text-[11px] font-semibold text-[#636366]">{data.partner.name}의 시각</span>
-                                <div className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-500 flex items-center justify-center font-bold text-[9px]">{data.partner.name.charAt(0)}</div>
-                              </div>
-                            )}
-                            {branch.partner.map((item, i) => (
-                              <KwBtn key={`partner-${branch.id}-${i}`} item={item} onSelect={pick} isSelected={sel?.text === item.text}
-                                className="w-full px-3 py-2.5 bg-white border border-indigo-100 rounded-2xl text-[12px] font-medium text-[#1C1C1E] text-center leading-snug break-keep hover:border-indigo-300 hover:bg-indigo-50/30" />
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              </TabsContent>
+              <span key={speaker}
+                className="inline-flex items-center gap-1 px-2 py-[3px] rounded-full text-[11px] font-semibold"
+                style={{ backgroundColor: bg, color }}>
+                <span className="w-3 h-3 rounded-full flex items-center justify-center font-bold text-[7px]"
+                      style={{ backgroundColor: `${color}30` }}>
+                  {name.charAt(0)}
+                </span>
+                {name}
+              </span>
             );
-          }
-
-          /* Venn diagram tabs */
-          const catData = data.mindmap[MINDMAP_KEY_BY_CATEGORY[cat.id]];
-          return (
-            <VennCard key={cat.id} catData={catData} cat={cat} data={data} pick={pick} sel={sel} />
-          );
-        })}
-      </Tabs>
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-/* ── Category Detail Card ── */
-function CategoryCard({ cat, aName, bName, aText, bText, keywords }: {
-  cat: typeof CATEGORIES[number];
+/* ═══════════════════════════════════════════════
+   상대방의 언어로 듣기
+═══════════════════════════════════════════════ */
+function PerspectiveSection({
+  sections, aName, bName,
+}: {
+  sections: LlmResult["sections"];
   aName: string; bName: string;
-  aText: string; bText: string;
-  keywords: string[];
 }) {
-  const Icon = cat.icon;
+  const aText = [sections.emotions?.a, sections.needs?.a].filter(Boolean).join(" ");
+  const bText = [sections.emotions?.b, sections.needs?.b].filter(Boolean).join(" ");
+  if (!aText && !bText) return null;
+
+  const cards = [
+    aText ? { from: aName, to: bName, text: aText, color: A_COLOR, light: A_LIGHT } : null,
+    bText ? { from: bName, to: aName, text: bText, color: B_COLOR, light: B_LIGHT } : null,
+  ].filter(Boolean) as Array<{ from: string; to: string; text: string; color: string; light: string }>;
+
   return (
     <motion.div
-      key={cat.id}
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="bg-white rounded-2xl border border-[#EBEBF0] overflow-hidden"
+      initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}
+      className="px-4 sm:px-5 pb-5"
     >
-      <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-[#F5F5F7]">
-        <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0" style={{ backgroundColor: cat.bg, color: cat.color }}>
-          <Icon size={14} strokeWidth={2.5} />
-        </div>
-        <span className="text-[13.5px] font-bold text-[#1C1C1E]">{cat.label}</span>
-        <span className="text-[11px]" style={{ color: cat.color }}>{cat.en}</span>
-      </div>
-      <div className="p-4 space-y-3">
-        <div className="flex gap-2.5">
-          <div className="w-6 h-6 rounded-full bg-pink-100 flex items-center justify-center text-pink-500 font-bold text-[10px] flex-shrink-0 mt-0.5">
-            {aName.charAt(0)}
+      <SectionLabel label="상대방의 언어로 듣기" icon={MessageSquare} color="#8B8BA0" />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+        {cards.map(({ from, to, text, color, light }) => (
+          <div key={from}
+               className="bg-white rounded-2xl border border-[#EAEAEF] overflow-hidden"
+               style={{ boxShadow: CARD_SHADOW }}>
+            {/* 상단 컬러 스트라이프 헤더 */}
+            <div className="px-4 py-3 border-b border-[#F2F2F5]"
+                 style={{ background: `${light}` }}>
+              <p className="text-[12.5px] font-bold leading-snug" style={{ color }}>
+                {to}에게 전하는
+                <span className="ml-1 font-black">{from}</span>의 진짜 마음
+              </p>
+            </div>
+            <p className="px-4 py-4 text-[13.5px] text-[#38383F] leading-[1.9] break-keep">
+              {text}
+            </p>
           </div>
-          <div className="flex-1 bg-[#F5F5F7] rounded-xl rounded-tl-sm p-3.5" style={{ borderLeft: `3px solid ${cat.color}40` }}>
-            <p className="text-[12px] font-semibold mb-1.5" style={{ color: cat.color }}>{aName}의 {cat.label}</p>
-            <p className="text-[13px] text-[#3f3f3f] leading-relaxed break-keep">{aText || "분석 내용 없음"}</p>
-          </div>
-        </div>
-        <div className="flex gap-2.5">
-          <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-500 font-bold text-[10px] flex-shrink-0 mt-0.5">
-            {bName.charAt(0)}
-          </div>
-          <div className="flex-1 bg-[#F5F5F7] rounded-xl rounded-tl-sm p-3.5" style={{ borderLeft: `3px solid ${cat.color}40` }}>
-            <p className="text-[12px] font-semibold mb-1.5" style={{ color: cat.color }}>{bName}의 {cat.label}</p>
-            <p className="text-[13px] text-[#3f3f3f] leading-relaxed break-keep">{bText || "분석 내용 없음"}</p>
-          </div>
-        </div>
-        {keywords.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {keywords.map((kw) => (
-              <span key={kw} className="px-2.5 py-1 rounded-full text-[11.5px] font-medium"
-                style={{ backgroundColor: cat.bg, color: cat.color }}>
-                {kw}
-              </span>
-            ))}
-          </div>
-        )}
+        ))}
       </div>
     </motion.div>
   );
 }
 
-const TENSION_STYLES: Record<string, { color: string; bg: string }> = {
-  FACT_CONFLICT:      { color: "#E55050", bg: "#FEF2F2" },
-  PERSPECTIVE_GAP:    { color: "#F0A858", bg: "#FEF6E8" },
-  EMOTION_NEED_GAP:   { color: "#E88FA0", bg: "#FDF2F4" },
-  LABEL_MISMATCH:     { color: "#818CF8", bg: "#EEF2FF" },
-  UNADDRESSED_NEEDS:  { color: "#5BB89A", bg: "#E8F6F0" },
-  INTERPRETATION_GAP: { color: "#A78BFA", bg: "#F5F3FF" },
-};
-
-const PAIR_STYLES: Record<string, { color: string; bg: string }> = {
-  COMMON_FACT:              { color: "#818CF8", bg: "#EEF2FF" },
-  SHARED_EMOTION:           { color: "#E88FA0", bg: "#FDF2F4" },
-  INTERPRETATION_ALIGNMENT: { color: "#F0A858", bg: "#FEF6E8" },
-  NEED_ALIGNMENT:           { color: "#5BB89A", bg: "#E8F6F0" },
-};
-
-function TensionCard({ tension, aName, bName }: {
-  tension: DualAnalysisResult["tensions"][number];
-  aName: string;
-  bName: string;
+/* ═══════════════════════════════════════════════
+   상세 분석
+═══════════════════════════════════════════════ */
+function DetailAnalysisSection({
+  sections, aName, bName,
+}: {
+  sections: LlmResult["sections"];
+  aName: string; bName: string;
 }) {
-  const style = TENSION_STYLES[tension.type] ?? { color: "#636366", bg: "#F5F5F7" };
+  const hasContent = CATEGORIES.some((cat) => {
+    const catId = cat.id as FeinCatId;
+    return sections[catId]?.a || sections[catId]?.b;
+  });
+  if (!hasContent) return null;
+
   return (
-    <div className="bg-white rounded-2xl border border-[#EBEBF0] overflow-hidden">
-      <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-[#F5F5F7]">
-        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: style.color }} />
-        <span className="text-[13.5px] font-bold text-[#1C1C1E]">{tension.displayName ?? tension.type}</span>
-      </div>
-      <div className="p-4 space-y-3">
-        <p className="text-[13px] text-[#636366] leading-relaxed break-keep">{tension.rationale}</p>
-        {tension.evidence.length > 0 && (
-          <div className="space-y-2 pt-1">
-            {tension.evidence.map((ev, i) => {
-              const isA = ev.speaker === "A";
-              const name = isA ? aName : bName;
-              const color = isA ? "#f07090" : "#7b87ff";
-              const bgCls = isA ? "bg-pink-50 border-pink-100" : "bg-indigo-50 border-indigo-100";
-              const confidencePct = ev.confidence != null ? Math.min(Math.round(ev.confidence * 100), 99) : null;
-              return (
-                <div key={i} className={`flex gap-2.5 rounded-xl p-3 border ${bgCls}`}>
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center font-bold text-[9px] flex-shrink-0 mt-0.5"
-                    style={{ backgroundColor: color + "33", color }}>
-                    {name.charAt(0)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[11px] font-semibold mb-1" style={{ color }}>{name}</p>
-                    <p className="text-[12.5px] text-[#3f3f3f] leading-relaxed break-keep">"{ev.text}"</p>
-                    {confidencePct != null && confidencePct > 0 && (
-                      <p className="text-[10.5px] text-[#AEAEB2] mt-1">신뢰도 {confidencePct}%</p>
-                    )}
-                  </div>
+    <motion.div
+      initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26 }}
+      className="px-4 sm:px-5 pb-5"
+    >
+      <SectionLabel label="상세 분석" icon={AlignLeft} color="#8B8BA0" />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+        {CATEGORIES.map((cat) => {
+          const catId = cat.id as FeinCatId;
+          const aText = sections[catId]?.a ?? "";
+          const bText = sections[catId]?.b ?? "";
+          if (!aText && !bText) return null;
+          const Icon = cat.icon;
+          return (
+            <div key={cat.id}
+                 className="bg-white rounded-2xl border overflow-hidden"
+                 style={{ borderColor: `${cat.color}22`, boxShadow: CARD_SHADOW }}>
+              {/* 카테고리 헤더 */}
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b"
+                   style={{ background: cat.bg, borderColor: `${cat.color}18` }}>
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0"
+                     style={{ backgroundColor: `${cat.color}22`, color: cat.color }}>
+                  <Icon size={10} strokeWidth={2.5} />
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <span className="text-[12px] font-bold" style={{ color: cat.color }}>{cat.label}</span>
+                <span className="text-[9.5px] opacity-40 ml-0.5 font-medium" style={{ color: cat.color }}>{cat.en}</span>
+              </div>
+
+              {/* A / B 분석 텍스트 */}
+              <div className="divide-y divide-[#F5F5F8]">
+                {aText && (
+                  <div className="flex gap-3 px-4 py-3.5 items-start">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 mt-0.5"
+                         style={{ background: A_LIGHT, color: A_COLOR }}>
+                      {aName.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold mb-1" style={{ color: A_COLOR }}>{aName}</p>
+                      <p className="text-[13px] text-[#3A3A42] leading-relaxed break-keep">{aText}</p>
+                    </div>
+                  </div>
+                )}
+                {bText && (
+                  <div className="flex gap-3 px-4 py-3.5 items-start">
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 mt-0.5"
+                         style={{ background: B_LIGHT, color: B_COLOR }}>
+                      {bName.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold mb-1" style={{ color: B_COLOR }}>{bName}</p>
+                      <p className="text-[13px] text-[#3A3A42] leading-relaxed break-keep">{bText}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-function CommonGroundCard({ pair, aName, bName }: {
-  pair: DualAnalysisResult["commonGroundPairs"][number];
-  aName: string;
-  bName: string;
-}) {
-  const style = PAIR_STYLES[pair.pairType] ?? { color: "#636366", bg: "#F5F5F7" };
+/* ═══════════════════════════════════════════════
+   Insights Section (갈등 포인트)
+═══════════════════════════════════════════════ */
+const BAD_RATIONALE_PATTERNS = [
+  "정렬되지 않은", "statement가 남아", "처리할 수 없", "오류가 발생", "알 수 없는",
+  "분류되지 않", "매핑 실패", "null", "undefined",
+];
+function isValidTension(t: DualAnalysisResult["tensions"][number]) {
+  if (!t.rationale || t.rationale.trim().length < 10) return false;
+  return !BAD_RATIONALE_PATTERNS.some((p) => t.rationale.includes(p));
+}
+
+function InsightsSection({
+  dualResult, aName, bName,
+}: { dualResult: DualAnalysisResult; aName: string; bName: string }) {
+  const validTensions = dualResult.tensions.filter(isValidTension);
+  if (validTensions.length === 0) return null;
+
   return (
-    <div className="bg-white rounded-2xl border border-[#EBEBF0] overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#F5F5F7]">
-        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: style.color }} />
-        <span className="text-[12.5px] font-bold" style={{ color: style.color }}>{pair.pairTypeDisplayName}</span>
-        <span className="ml-auto text-[10.5px] text-[#AEAEB2]">유사도 {Math.round(pair.similarity * 100)}%</span>
-      </div>
-      <div className="p-4 space-y-2.5">
-        {pair.aStatement && (
-          <div className="flex gap-2.5">
-            <div className="w-5 h-5 rounded-full bg-pink-100 text-pink-500 flex items-center justify-center font-bold text-[9px] flex-shrink-0 mt-0.5">{aName.charAt(0)}</div>
-            <p className="text-[12.5px] text-[#3f3f3f] leading-relaxed break-keep flex-1">"{pair.aStatement.text}"</p>
-          </div>
-        )}
-        {pair.bStatement && (
-          <div className="flex gap-2.5">
-            <div className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-500 flex items-center justify-center font-bold text-[9px] flex-shrink-0 mt-0.5">{bName.charAt(0)}</div>
-            <p className="text-[12.5px] text-[#3f3f3f] leading-relaxed break-keep flex-1">"{pair.bStatement.text}"</p>
-          </div>
-        )}
+    <div className="px-4 sm:px-5 mb-6">
+      <SectionLabel label="갈등 포인트" icon={Target} color="#DC4C4C" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+        {validTensions.map((t) => (
+          <TensionCard key={t.id} tension={t} aName={aName} bName={bName} />
+        ))}
       </div>
     </div>
   );
 }
 
-/* ── Dashboard Page ── */
+/* ═══════════════════════════════════════════════
+   Dashboard Page
+═══════════════════════════════════════════════ */
 export function DashboardPage() {
   const navigate = useNavigate();
-  const [llmResult, setLlmResult] = useState<LlmResult | null>(null);
-  const [dualResult, setDualResult] = useState<DualAnalysisResult | null>(null);
+  const [llmResult, setLlmResult]           = useState<LlmResult | null>(null);
+  const [dualResult, setDualResult]         = useState<DualAnalysisResult | null>(null);
   const [evidenceResult, setEvidenceResult] = useState<LlmEvidenceResult | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [personNames, setPersonNames] = useState({ a: "A", b: "B" });
-  const [relationship, setRelationship] = useState("");
+  const [isLoading, setIsLoading]           = useState(true);
+  const [errorMsg, setErrorMsg]             = useState<string | null>(null);
+  const [personNames, setPersonNames]       = useState({ a: "A", b: "B" });
+  const [relationship, setRelationship]     = useState("");
+  const [myRole, setMyRole]                 = useState<"A" | "B" | null>(null);
 
   useEffect(() => {
     const stored = sessionStorage.getItem("analysisData");
@@ -637,17 +959,16 @@ export function DashboardPage() {
       setIsLoading(false);
       return;
     }
-
-    let parsed: { sessionId?: string; personA?: { name: string }; personB?: { name: string } };
-    try {
-      parsed = JSON.parse(stored);
-    } catch {
+    let parsed: { sessionId?: string; personA?: { name: string }; personB?: { name: string }; myRole?: "A" | "B" };
+    try { parsed = JSON.parse(stored); }
+    catch {
       setErrorMsg("분석 데이터가 손상되었습니다.");
       setIsLoading(false);
       return;
     }
-
-    if (parsed.personA?.name) setPersonNames({ a: parsed.personA.name, b: parsed.personB?.name ?? "B" });
+    if (parsed.personA?.name)
+      setPersonNames({ a: parsed.personA.name, b: parsed.personB?.name ?? "B" });
+    if (parsed.myRole === "A" || parsed.myRole === "B") setMyRole(parsed.myRole);
 
     const sessionId = parsed.sessionId;
     if (!sessionId) {
@@ -656,7 +977,6 @@ export function DashboardPage() {
       return;
     }
 
-    // 저장된 room 데이터에서 관계 유형 읽기
     const roomRaw = localStorage.getItem(`room_${sessionId}`);
     if (roomRaw) {
       try { setRelationship(JSON.parse(roomRaw).relationship ?? ""); } catch { /* ignore */ }
@@ -673,7 +993,6 @@ export function DashboardPage() {
       }).finally(() => setIsLoading(false));
     };
 
-    // GET 먼저 시도 → 없으면 POST로 생성, ANALYSIS_NOT_READY면 재시도
     const tryLoad = (retryCount = 0) => {
       api.getLlmAnalysis(sessionId)
         .then(handleLoadedLlm)
@@ -683,7 +1002,6 @@ export function DashboardPage() {
               .then(handleLoadedLlm)
               .catch((genErr: ApiError) => {
                 if (genErr.code === "ANALYSIS_NOT_READY" && retryCount < 10) {
-                  // 모델 분석 아직 진행 중 → 2초 후 재시도
                   setTimeout(() => tryLoad(retryCount + 1), 2000);
                 } else {
                   setErrorMsg(genErr.message ?? "LLM 분석 생성에 실패했습니다.");
@@ -699,12 +1017,25 @@ export function DashboardPage() {
     tryLoad();
   }, []);
 
+  /* ── Header ── */
   const header = (
-    <header className="bg-white border-b border-[#EBEBF0] px-5 h-14 flex items-center justify-between sticky top-0 z-[500]">
-      <button onClick={() => navigate("/home")} className="w-8 h-8 flex items-center justify-center text-[#636366] hover:bg-[#F5F5F7] rounded-lg transition-all">
-        <Home size={18} strokeWidth={2} />
+    <header
+      className="px-4 h-14 flex items-center justify-between sticky top-0 z-[500]"
+      style={{
+        background: "rgba(255,255,255,0.80)",
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+        borderBottom: "1px solid rgba(0,0,0,0.06)",
+      }}
+    >
+      <button
+        onClick={() => navigate("/home")}
+        className="w-8 h-8 flex items-center justify-center rounded-xl transition-all hover:bg-black/05 active:scale-95"
+        style={{ color: "#636370" }}
+      >
+        <ChevronLeft size={20} strokeWidth={2} />
       </button>
-      <p className="text-[15px] font-bold text-[#222222] tracking-tight">분석 대시보드</p>
+      <p className="text-[14px] font-bold text-[#1C1C1E] tracking-tight">분석 결과</p>
       <div className="w-8" />
     </header>
   );
@@ -712,15 +1043,9 @@ export function DashboardPage() {
   /* ── Loading ── */
   if (isLoading) {
     return (
-      <div className="flex-1 flex flex-col bg-[#F5F5F7] min-h-screen">
+      <div className="flex-1 flex flex-col min-h-screen" style={{ background: "#F5F5F7" }}>
         {header}
-        <div className="flex-1 flex flex-col items-center justify-center gap-4">
-          <motion.div animate={{ rotate: 360 }} transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}>
-            <Loader2 size={32} className="text-[#c9485b]" />
-          </motion.div>
-          <p className="text-[14px] text-[#636366] font-medium">AI가 갈등을 분석하고 있어요…</p>
-          <p className="text-[12px] text-[#AEAEB2]">잠시만 기다려주세요. 최대 30초 정도 소요될 수 있어요.</p>
-        </div>
+        <DashboardSkeleton />
       </div>
     );
   }
@@ -728,16 +1053,22 @@ export function DashboardPage() {
   /* ── Error ── */
   if (errorMsg || !llmResult) {
     return (
-      <div className="flex-1 flex flex-col bg-[#F5F5F7] min-h-screen">
+      <div className="flex-1 flex flex-col min-h-screen" style={{ background: "#F5F5F7" }}>
         {header}
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
-          <div className="w-14 h-14 bg-[#fff5f7] rounded-2xl flex items-center justify-center">
-            <AlertCircle size={24} className="text-[#c9485b]" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-5 px-6">
+          <div className="w-16 h-16 rounded-3xl flex items-center justify-center"
+               style={{ background: "#FFF0F3" }}>
+            <AlertCircle size={26} style={{ color: A_COLOR }} />
           </div>
-          <p className="text-[16px] font-bold text-[#222222] text-center">분석 결과를 불러올 수 없어요</p>
-          <p className="text-[13px] text-[#636366] text-center leading-relaxed">{errorMsg}</p>
-          <button onClick={() => navigate("/home")}
-            className="mt-2 px-6 h-11 bg-[#ffd1da] text-[#222222] rounded-xl font-semibold text-[14px] hover:bg-[#ffb3c4] active:scale-[0.98] transition-all">
+          <div className="text-center">
+            <p className="text-[17px] font-bold text-[#1C1C1E] mb-1.5">결과를 불러올 수 없어요</p>
+            <p className="text-[13.5px] text-[#636370] leading-relaxed">{errorMsg}</p>
+          </div>
+          <button
+            onClick={() => navigate("/home")}
+            className="mt-1 px-6 h-11 rounded-2xl font-semibold text-[14px] active:scale-[0.98] transition-all"
+            style={{ background: A_LIGHT, color: A_COLOR }}
+          >
             홈으로 돌아가기
           </button>
         </div>
@@ -747,165 +1078,211 @@ export function DashboardPage() {
 
   const { sections, diagramKeywords, resultText } = llmResult;
   const { a: aName, b: bName } = personNames;
-  const date = new Date(llmResult.createdAt).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\. /g, ".").replace(/\.$/, "");
+  const date = new Date(llmResult.createdAt)
+    .toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" })
+    .replace(/\. /g, ".").replace(/\.$/, "");
   const mindmapData = buildMindmapData({ llmResult, aName, bName, relationship, date, evidenceResult });
 
   return (
-    <div className="flex-1 flex flex-col bg-[#F5F5F7] min-h-screen">
+    <div className="flex-1 flex flex-col min-h-screen" style={{ background: "#F0F0F4" }}>
       {header}
 
-      <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1200px] mx-auto">
+      <div className="flex-1 overflow-y-auto pb-16 w-full max-w-[680px] mx-auto">
 
-        {/* Title */}
-        <div className="px-5 pt-6 pb-5 bg-white border-b border-[#EBEBF0]">
-          <div className="flex items-center gap-2 mb-2.5">
-            <span className="px-2.5 py-0.5 bg-[#fff5f7] rounded-full text-[11.5px] font-semibold text-[#c9485b]">{date}</span>
-            {relationship && <span className="px-2.5 py-0.5 bg-[#F5F5F7] rounded-full text-[11.5px] font-semibold text-[#636366]">{relationship}</span>}
+        {/* ━━━━━━ 히어로 배너 ━━━━━━ */}
+        <motion.div
+          initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}
+          className="relative overflow-hidden"
+          style={{
+            background: "linear-gradient(150deg, #FFF0F4 0%, #F8F5FF 55%, #EFF2FF 100%)",
+            borderBottom: "1px solid rgba(0,0,0,0.06)",
+          }}
+        >
+          {/* 배경 장식 — 컬러 블롭 */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full"
+                 style={{ background: `radial-gradient(circle, ${A_COLOR}22, transparent 70%)` }} />
+            <div className="absolute -bottom-8 -left-8 w-40 h-40 rounded-full"
+                 style={{ background: `radial-gradient(circle, ${B_COLOR}1A, transparent 70%)` }} />
           </div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[13.5px] font-semibold text-[#f07090]">{aName}</span>
-            <span className="text-[12px] text-[#AEAEB2]">·</span>
-            <span className="text-[13.5px] font-semibold text-[#7b87ff]">{bName}</span>
-          </div>
-          <p className="text-[13px] text-[#AEAEB2]">두 사람의 관점을 AI가 재구성하여 갈등의 구조를 보여드립니다.</p>
-        </div>
 
-        <MindmapVisualization data={mindmapData} />
+          <div className="relative px-5 pt-6 pb-7">
+            {/* 날짜 · 관계 배지 */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                    style={{ background: "rgba(0,0,0,0.06)", color: "#52525B" }}>
+                {date}
+              </span>
+              {relationship && (
+                <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                      style={{ background: "rgba(0,0,0,0.05)", color: "#52525B" }}>
+                  {relationship}
+                </span>
+              )}
+            </div>
 
-        {/* 핵심 갈등 키워드 */}
-        {diagramKeywords.coreConflict.length > 0 && (
-          <div className="px-4 sm:px-5 pt-5 mb-0">
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-              className="bg-white rounded-2xl p-5 border border-[#EBEBF0] overflow-hidden relative">
-              <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[#c9485b] to-[#ffd1da] rounded-l-2xl" />
-              <div className="pl-3">
-                <p className="text-[12px] font-semibold text-[#c9485b] mb-3">핵심 갈등 키워드</p>
-                <div className="flex flex-wrap gap-2">
-                  {diagramKeywords.coreConflict.map((kw) => (
-                    <span key={kw} className="px-3 py-1.5 bg-[#fff5f7] border border-[#ffd1da] rounded-full text-[12.5px] font-semibold text-[#c9485b]">{kw}</span>
-                  ))}
+            {/* 갈등 제목 */}
+            {diagramKeywords.coreConflict[0] && (
+              <p className="text-[22px] font-black tracking-tight leading-tight mb-6"
+                 style={{ color: "#18181B" }}>
+                {diagramKeywords.coreConflict[0]}
+              </p>
+            )}
+
+            {/* A vs B 구도 */}
+            <div className="flex items-center gap-3">
+              {/* A */}
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-[16px] flex-shrink-0"
+                     style={{ background: A_LIGHT, color: A_COLOR, border: `1.5px solid ${A_COLOR}30` }}>
+                  {aName.charAt(0)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[14px] font-bold truncate" style={{ color: "#18181B" }}>{aName}</p>
+                  <p className="text-[10px] font-semibold" style={{ color: A_COLOR }}>주체 A</p>
                 </div>
               </div>
-            </motion.div>
-          </div>
-        )}
 
-        {/* AI 종합 분석 */}
-        <div className="px-4 sm:px-5 py-5">
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-            className="flex items-center gap-2 mb-3 px-1">
-            <div className="w-8 h-8 bg-[#fff5f7] text-[#c9485b] rounded-xl flex items-center justify-center flex-shrink-0"><Wand2 size={16} strokeWidth={2.5} /></div>
-            <p className="text-[14.5px] font-bold text-[#222222]">AI 종합 분석</p>
-          </motion.div>
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-            className="bg-white rounded-2xl p-5 border border-[#EBEBF0]">
-            <p className="text-[13.5px] text-[#3f3f3f] leading-[1.8] break-keep whitespace-pre-wrap">{resultText}</p>
-          </motion.div>
-        </div>
-
-        {/* 요소별 상세 분석 */}
-        <div className="px-4 sm:px-5 mb-5">
-          <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-            className="flex items-center gap-2 mb-3 px-1">
-            <div className="w-8 h-8 bg-[#F5F5F7] text-[#636366] rounded-xl flex items-center justify-center flex-shrink-0"><Target size={16} strokeWidth={2.5} /></div>
-            <p className="text-[14.5px] font-bold text-[#222222]">요소별 상세 분석</p>
-          </motion.div>
-          <div className="space-y-3">
-            {CATEGORIES.map((cat, i) => (
-              <motion.div key={cat.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 + i * 0.07 }}>
-                <CategoryCard
-                  cat={cat}
-                  aName={aName}
-                  bName={bName}
-                  aText={sections[cat.id]?.a ?? ""}
-                  bText={sections[cat.id]?.b ?? ""}
-                  keywords={diagramKeywords[cat.id] ?? []}
-                />
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        {/* 갈등 포인트 */}
-        {dualResult && dualResult.tensions.length > 0 && (
-          <div className="px-4 sm:px-5 mb-5">
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-              className="flex items-center gap-2 mb-3 px-1">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#FEF2F2] text-[#E55050]">
-                <Target size={16} strokeWidth={2.5} />
+              {/* vs */}
+              <div className="flex-shrink-0 flex flex-col items-center gap-1 px-1">
+                <div className="w-px h-2.5" style={{ background: "#D4D4D8" }} />
+                <span className="text-[9px] font-black tracking-widest" style={{ color: "#A1A1AA" }}>VS</span>
+                <div className="w-px h-2.5" style={{ background: "#D4D4D8" }} />
               </div>
-              <p className="text-[14.5px] font-bold text-[#222222]">갈등 포인트</p>
-              <span className="ml-1 px-2 py-0.5 bg-[#FEF2F2] text-[#E55050] rounded-full text-[11px] font-semibold">{dualResult.tensions.length}개</span>
-            </motion.div>
-            <div className="space-y-3">
-              {dualResult.tensions.map((tension, i) => (
-                <motion.div key={tension.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 + i * 0.06 }}>
-                  <TensionCard tension={tension} aName={aName} bName={bName} />
-                </motion.div>
-              ))}
+
+              {/* B */}
+              <div className="flex items-center gap-2.5 flex-1 min-w-0 justify-end">
+                <div className="min-w-0 text-right">
+                  <p className="text-[14px] font-bold truncate" style={{ color: "#18181B" }}>{bName}</p>
+                  <p className="text-[10px] font-semibold" style={{ color: B_COLOR }}>주체 B</p>
+                </div>
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center font-black text-[16px] flex-shrink-0"
+                     style={{ background: B_LIGHT, color: B_COLOR, border: `1.5px solid ${B_COLOR}30` }}>
+                  {bName.charAt(0)}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* 두 사람의 공통점 */}
-        {dualResult && dualResult.commonGroundPairs.length > 0 && (
-          <div className="px-4 sm:px-5 mb-5">
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
-              className="flex items-center gap-2 mb-3 px-1">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 bg-[#E8F6F0] text-[#5BB89A]">
-                <HelpCircle size={16} strokeWidth={2.5} />
+            {/* 서브텍스트 */}
+            <p className="mt-4 text-[12px] leading-relaxed" style={{ color: "#A1A1AA" }}>
+              AI가 두 분의 관점을 분석하여 갈등 구조를 정리했어요.
+            </p>
+          </div>
+        </motion.div>
+
+        {/* ━━━━━━ 컨텐츠 영역 ━━━━━━ */}
+        <div className="space-y-px">
+
+          {/* FEIN 분석 */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}
+            className="bg-white px-4 sm:px-5 pt-6 pb-6"
+          >
+            <SectionLabel label="FEIN 분석" icon={Sparkles} color="#C9485B" />
+            <FeinDiagram
+              llmResult={llmResult} aName={aName} bName={bName}
+              myRole={myRole} mindmapData={mindmapData}
+            />
+          </motion.div>
+
+          {/* AI 종합 분석 */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}
+            className="bg-white px-4 sm:px-5 pt-6 pb-6"
+          >
+            <SectionLabel label="AI 종합 분석" icon={Wand2} color="#C9485B" />
+
+            {/* 메인 텍스트 카드 */}
+            <div className="relative rounded-2xl border border-[#EAEAEF] overflow-hidden"
+                 style={{ background: "#FAFAFA", boxShadow: CARD_SHADOW }}>
+              {/* 장식 따옴표 */}
+              <div className="absolute top-3 left-4 text-[56px] font-black leading-none select-none pointer-events-none"
+                   style={{ color: "#F2F2F4", fontFamily: "Georgia, serif" }}>
+                "
               </div>
-              <p className="text-[14.5px] font-bold text-[#222222]">두 사람의 공통점</p>
-              <span className="ml-1 px-2 py-0.5 bg-[#E8F6F0] text-[#5BB89A] rounded-full text-[11px] font-semibold">{dualResult.commonGroundPairs.length}개</span>
-            </motion.div>
-            <div className="space-y-3">
-              {dualResult.commonGroundPairs.map((pair, i) => (
-                <motion.div key={pair.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.47 + i * 0.05 }}>
-                  <CommonGroundCard pair={pair} aName={aName} bName={bName} />
-                </motion.div>
-              ))}
+              <p className="relative px-5 pt-8 pb-5 text-[13.5px] text-[#38383F] leading-[1.9] break-keep whitespace-pre-wrap">
+                {resultText}
+              </p>
             </div>
-          </div>
-        )}
 
-        {/* 관계 전환 키워드 */}
-        {diagramKeywords.relationshipShift.length > 0 && (
-          <div className="px-4 sm:px-5 mb-5">
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
-              className="bg-white rounded-2xl p-5 border border-[#EBEBF0]">
-              <p className="text-[12px] font-semibold text-[#636366] mb-3">관계 회복을 위한 전환점</p>
-              <div className="flex flex-wrap gap-2">
-                {diagramKeywords.relationshipShift.map((kw) => (
-                  <span key={kw} className="px-3 py-1.5 bg-[#E8F6F0] text-[#5BB89A] rounded-full text-[12.5px] font-semibold">{kw}</span>
-                ))}
+            {/* 관계 회복 키워드 */}
+            {diagramKeywords.relationshipShift.length > 0 && (
+              <div className="mt-3 rounded-2xl border border-[#EAEAEF] px-4 py-3.5 flex items-start gap-3"
+                   style={{ background: "#F7FDF9", boxShadow: CARD_SHADOW }}>
+                <div className="w-6 h-6 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                     style={{ background: "#D4F2E7", color: "#28916A" }}>
+                  <HelpCircle size={12} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <p className="text-[10.5px] font-bold mb-2" style={{ color: "#28916A" }}>관계 회복 전환점</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {diagramKeywords.relationshipShift.map((kw) => (
+                      <span key={kw}
+                            className="px-2.5 py-1 rounded-full text-[11.5px] font-semibold"
+                            style={{ background: "#D4F2E7", color: "#1E7A57" }}>
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
+            )}
+          </motion.div>
+
+          {/* 상대방의 언어로 듣기 */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }}
+            className="bg-white pt-6 pb-1"
+          >
+            <PerspectiveSection sections={sections} aName={aName} bName={bName} />
+          </motion.div>
+
+          {/* 상세 분석 */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+            className="bg-white pt-6 pb-1"
+          >
+            <DetailAnalysisSection sections={sections} aName={aName} bName={bName} />
+          </motion.div>
+
+          {/* 갈등 포인트 */}
+          {dualResult && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}
+              className="bg-white pt-6 pb-1"
+            >
+              <InsightsSection dualResult={dualResult} aName={aName} bName={bName} />
             </motion.div>
-          </div>
-        )}
+          )}
 
-        {/* 함께 생각해볼 질문 */}
-        {sections.questions.length > 0 && (
-          <div className="px-4 sm:px-5 mb-8">
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}
-              className="bg-white rounded-2xl p-5 border border-[#EBEBF0]">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-[#fff5f7] text-[#c9485b] rounded-xl flex items-center justify-center flex-shrink-0"><HelpCircle size={16} strokeWidth={2.5} /></div>
-                <p className="text-[14.5px] font-bold text-[#222222]">함께 생각해볼 질문</p>
-              </div>
-              <p className="text-[12.5px] text-[#AEAEB2] mb-4">아래 질문들이 두 분의 갈등 해결에 실마리가 될 수 있어요.</p>
+          {/* 함께 생각해볼 질문 */}
+          {sections.questions.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.31 }}
+              className="bg-white px-4 sm:px-5 pt-6 pb-8"
+            >
+              <SectionLabel label="함께 생각해볼 질문" icon={HelpCircle} color="#8B8BA0" />
               <div className="space-y-2.5">
                 {sections.questions.map((q, i) => (
-                  <motion.div key={i} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.6 + i * 0.08 }}
-                    className="flex gap-3 items-start bg-[#F5F5F7] rounded-xl p-4 border border-[#EBEBF0]">
-                    <div className="min-w-5 h-5 rounded-full bg-[#fff5f7] text-[#c9485b] flex items-center justify-center text-[11px] font-bold flex-shrink-0 mt-0.5">{i + 1}</div>
-                    <p className="text-[13px] text-[#636366] leading-relaxed">{q}</p>
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: 0.35 + i * 0.06 }}
+                    className="flex gap-3.5 items-start rounded-2xl p-4 border border-[#EAEAEF]"
+                    style={{ background: "#FAFAFA", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}
+                  >
+                    <div className="w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px] flex-shrink-0 mt-0.5"
+                         style={{ background: "#FFF0F3", color: A_COLOR }}>
+                      {i + 1}
+                    </div>
+                    <p className="text-[13.5px] text-[#4A4A55] leading-relaxed break-keep flex-1">{q}</p>
                   </motion.div>
                 ))}
               </div>
             </motion.div>
-          </div>
-        )}
+          )}
 
+        </div>
       </div>
     </div>
   );
