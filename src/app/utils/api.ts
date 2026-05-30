@@ -176,6 +176,43 @@ export type SingleAnalysisResult = {
   };
 };
 
+export type KakaoCaptureInputResult = {
+  inputs: Array<{
+    id: string;
+    session_id: string;
+    user_id: string;
+    speaker: "A" | "B";
+    raw_text: string;
+    ocr_text: string;
+    submitted_at: string;
+  }>;
+  speaker: "A" | "B";
+  mode: "DUAL";
+  status: string;
+  captureParsing: {
+    model: string;
+    imageCount: number;
+    messages: Array<{
+      order: number;
+      speaker: "A" | "B";
+      text: string;
+      time: string | null;
+    }>;
+    notes: string[];
+    summary: {
+      messageCount: number;
+      aMessageCount: number;
+      bMessageCount: number;
+      hasBothSpeakers: boolean;
+    };
+  };
+  feinAnalysisStatus: "DONE" | "FAILED" | "SKIPPED";
+  next: {
+    generateLlmResult: string;
+    getLlmResult: string;
+  } | null;
+};
+
 export type HistoryResult = {
   items: Array<{
     sessionId: string;
@@ -240,8 +277,9 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
   const devToken = localStorage.getItem(DEV_AUTH_TOKEN_KEY);
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
 
-  if (!headers.has("Content-Type") && init.body) {
+  if (!headers.has("Content-Type") && init.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
   if (devToken && !headers.has("Authorization")) {
@@ -303,6 +341,16 @@ export const api = {
     return request<unknown>(`/sessions/${sessionId}/inputs`, {
       method: "POST",
       body: JSON.stringify({ rawText }),
+    });
+  },
+
+  submitKakaoCaptures(sessionId: string, images: File[]) {
+    const formData = new FormData();
+    images.forEach((image) => formData.append("images", image));
+
+    return request<KakaoCaptureInputResult>(`/sessions/${sessionId}/inputs/kakao-captures`, {
+      method: "POST",
+      body: formData,
     });
   },
 
