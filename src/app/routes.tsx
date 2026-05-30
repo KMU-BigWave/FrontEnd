@@ -7,6 +7,7 @@ import { InputPage } from "./pages/Input";
 import { WaitingPage } from "./pages/Waiting";
 import { WaitingRoom } from "./pages/WaitingRoom";
 import { DashboardPage } from "./pages/Dashboard";
+import { CaptureReview } from "./pages/CaptureReview";
 import { History } from "./pages/History";
 import { SoloInput } from "./pages/SoloInput";
 import { SoloLoading } from "./pages/SoloLoading";
@@ -75,6 +76,7 @@ export const router = createBrowserRouter([
       { path: "waiting", Component: WaitingPage },
       { path: "invite/:roomId", Component: InviteJoin },
       { path: "waiting/:roomId", Component: WaitingRoom },
+      { path: "capture-review/:roomId", Component: CaptureReview },
       { path: "analysis", Component: DashboardPage },
       { path: "history", Component: History },
       { path: "solo", Component: SoloInput },
