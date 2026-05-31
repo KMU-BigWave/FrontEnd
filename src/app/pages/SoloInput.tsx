@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { ArrowLeft, Brain } from "lucide-react";
 import { motion } from "motion/react";
 import { api } from "../utils/api";
+import { useAuth } from "../utils/authContext";
 
 const MAX_CHARS = 30000;
 
@@ -14,6 +15,7 @@ function hasDanger(text: string) {
 
 export function SoloInput() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [text, setText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -28,6 +30,7 @@ export function SoloInput() {
         relationshipType: "OTHER",
         mode: "SINGLE",
         roomPassword: "0000",
+        nickname: user?.name || "나",
       });
       await api.submitInput(session.id, rawText);
       sessionStorage.setItem("soloData", JSON.stringify({ text: rawText, sessionId: session.id }));

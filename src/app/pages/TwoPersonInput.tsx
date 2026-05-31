@@ -37,7 +37,7 @@ export function TwoPersonInput() {
   const [isCaptureSubmitting, setIsCaptureSubmitting] = useState(false);
   const [captureError, setCaptureError] = useState("");
 
-  const inviteLink = roomId ? `${window.location.origin}/invite/${roomId}` : "";
+  const inviteLink = roomId ? `${window.location.origin}/invite/${roomId}?from=${encodeURIComponent(nickname.trim())}` : "";
   const relationshipReady = Boolean(relationship && (relationship !== "기타" || customRelationship.trim()));
 
   useEffect(() => {
@@ -82,7 +82,7 @@ export function TwoPersonInput() {
     const relationshipType = RELATIONSHIP_TYPE_MAP[relationship] ?? "OTHER";
     setIsCreating(true);
     try {
-      const session = await api.createSession({ relationshipType, mode: "DUAL", roomPassword: pin });
+      const session = await api.createSession({ relationshipType, mode: "DUAL", roomPassword: pin, nickname: nickname.trim() });
       const id = session.id;
       localStorage.setItem(`room_${id}`, JSON.stringify({
         createdBy: nickname.trim(),

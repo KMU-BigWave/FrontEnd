@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import { motion } from "motion/react";
-import { Lock, ArrowLeft } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { api, API_BASE_URL } from "../utils/api";
 import { useAuth } from "../utils/authContext";
 
@@ -21,21 +21,26 @@ const GoogleIcon = () => (
 export function InviteJoin() {
   const { roomId } = useParams<{ roomId: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, isLoading } = useAuth();
-  const [step, setStep] = useState<"pin" | "name" | "write">("pin");
+
+  // 초대 링크의 ?from= 쿼리파라미터로 방 개설자 이름 표시
+  const urlCreatorName = searchParams.get("from");
+  const roomData = roomId ? JSON.parse(localStorage.getItem(`room_${roomId}`) || "null") : null;
+  const creatorName = urlCreatorName || roomData?.createdBy || "상대방";
+
+  // 이름 → 비밀번호 → 작성 순서
+  const [step, setStep] = useState<"name" | "pin" | "write">("name");
   const [nickname, setNickname] = useState("");
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
   const [text, setText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const roomData = roomId ? JSON.parse(localStorage.getItem(`room_${roomId}`) || "null") : null;
-  const creatorName = roomData?.createdBy || "상대방";
-
-  // ── 비로그인 (로딩 중 포함): 로그인 먼저 ───────────────
-  if (!user) {
+  // ── 비로그인: 로그인 먼저 ───────────────────────────────
+  if (!isLoading && !user) {
     return (
-      <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center px-5">
+      <div className="min-h-screen bg-[#F6F7FB] flex items-center justify-center px-5">
         <motion.div
           className="max-w-[400px] w-full text-center"
           initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
@@ -43,12 +48,12 @@ export function InviteJoin() {
           <motion.div className="text-4xl mb-6" animate={{ rotate: [0, 6, -6, 0] }} transition={{ duration: 2.5, repeat: Infinity }}>
             💌
           </motion.div>
-          <p className="text-[20px] font-bold text-[#222222] mb-2 tracking-tight">초대를 받았어요</p>
-          <p className="text-[14px] text-[#636366] mb-1 leading-relaxed">
-            <span className="font-semibold text-[#222222]">{creatorName}</span>님이 티격태격에 초대했어요.
+          <p className="text-[20px] font-bold text-[#1A1C2E] mb-2 tracking-tight">초대를 받았어요</p>
+          <p className="text-[14px] text-[#565C7A] mb-1 leading-relaxed">
+            <span className="font-semibold text-[#1A1C2E]">{creatorName}</span>님이 티격태격에 초대했어요.
           </p>
-          <p className="text-[12.5px] text-[#929292] mb-8 leading-relaxed">
-            로그인 후 비밀번호를 입력하면 참여할 수 있어요.
+          <p className="text-[12.5px] text-[#9BA3BE] mb-8 leading-relaxed">
+            로그인 후 이름과 비밀번호를 입력하면 참여할 수 있어요.
           </p>
           <button
             onClick={() => {
@@ -67,36 +72,74 @@ export function InviteJoin() {
     );
   }
 
+  if (!user) return null;
+
+  // ── step: 이름 입력 ───────────────────────────────────
+  if (step === "name") {
+    return (
+      <div className="min-h-screen bg-[#F6F7FB] flex items-center justify-center px-5">
+        <motion.div className="max-w-[400px] w-full text-center" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+          <motion.div className="text-4xl mb-5" animate={{ rotate: [0, 6, -6, 0] }} transition={{ duration: 2.5, repeat: Infinity }}>
+            💌
+          </motion.div>
+          <p className="text-[20px] font-bold text-[#1A1C2E] mb-1.5 tracking-tight">
+            <span className="text-[#8B8FCC]">{creatorName}</span>님이 초대했어요
+          </p>
+          <p className="text-[12.5px] text-[#9BA3BE] mb-8">분석 결과에 표시될 이름을 입력해주세요</p>
+          <div className="space-y-3 text-left">
+            <input
+              type="text" autoFocus
+              className="w-full h-12 px-4 bg-white border border-[#E5E8F0] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#C8CAE8]/60 focus:border-[#8B8FCC] transition-all text-[#1A1C2E] placeholder:text-[#9BA3BE]"
+              placeholder="예: 지영"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && nickname.trim()) setStep("pin"); }}
+              maxLength={20}
+            />
+            <button
+              disabled={!nickname.trim()}
+              onClick={() => setStep("pin")}
+              className="w-full h-12 text-white rounded-xl active:scale-[0.98] transition-all font-semibold disabled:cursor-not-allowed"
+              style={nickname.trim() ? { background: "#8B8FCC" } : { background: "#E5E8F0", color: "#9BA3BE" }}
+            >
+              다음
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   // ── step: PIN 입력 ────────────────────────────────────
   const handlePinSubmit = async () => {
     if (pinInput.length !== 4 || !roomId) return;
     try {
-      await api.joinSession(roomId, pinInput);
+      await api.joinSession(roomId, pinInput, nickname.trim());
       setPinError(false);
-      setStep("name");
+      setStep("write");
     } catch (error) {
       const e = error as { code?: string };
       if (e.code === "INVALID_ROOM_PASSWORD") setPinError(true);
-      else if (e.code === "ALREADY_JOINED") setStep("name");
+      else if (e.code === "ALREADY_JOINED") setStep("write");
       else alert((error as { message?: string }).message ?? "세션 참여 실패");
     }
   };
 
   if (step === "pin") {
     return (
-      <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center px-5">
+      <div className="min-h-screen bg-[#F6F7FB] flex items-center justify-center px-5">
         <motion.div className="max-w-[360px] w-full text-center" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
-          <motion.div className="text-4xl mb-6" animate={{ rotate: [0, 6, -6, 0] }} transition={{ duration: 2.5, repeat: Infinity }}>💌</motion.div>
-          <p className="text-[20px] font-bold text-[#222222] mb-1.5 tracking-tight">비밀번호를 입력해주세요</p>
-          <p className="text-[12.5px] text-[#929292] mb-8">
-            <span className="font-semibold text-[#222222]">{creatorName}</span>님이 설정한 숫자 4자리
+          <motion.div className="text-4xl mb-6" animate={{ rotate: [0, 6, -6, 0] }} transition={{ duration: 2.5, repeat: Infinity }}>🔒</motion.div>
+          <p className="text-[20px] font-bold text-[#1A1C2E] mb-1.5 tracking-tight">비밀번호를 입력해주세요</p>
+          <p className="text-[12.5px] text-[#9BA3BE] mb-8">
+            <span className="font-semibold text-[#1A1C2E]">{creatorName}</span>님이 설정한 숫자 4자리
           </p>
           <div className="mb-6">
             <div className="flex justify-center gap-3 mb-3">
               {[0, 1, 2, 3].map((i) => (
                 <div key={i} className={`w-14 h-14 rounded-2xl border-2 flex items-center justify-center transition-all
-                  ${pinInput[i] ? "border-[#ffd1da] bg-[#fff5f7]" : pinError ? "border-red-300 bg-red-50" : "border-[#dddddd] bg-white"}`}>
-                  {pinInput[i] && <span className="text-[#c9485b] text-lg">•</span>}
+                  ${pinInput[i] ? "border-[#8B8FCC] bg-[#EEEEF9]" : pinError ? "border-red-300 bg-red-50" : "border-[#E5E8F0] bg-white"}`}>
+                  {pinInput[i] && <span className="text-[#8B8FCC] text-lg">•</span>}
                 </div>
               ))}
             </div>
@@ -112,42 +155,12 @@ export function InviteJoin() {
           <button
             disabled={pinInput.length !== 4}
             onClick={handlePinSubmit}
-            className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl hover:bg-[#ffb3c4] disabled:bg-[#F0F0F5] disabled:text-[#C7C7CC] active:scale-[0.98] transition-all font-semibold"
+            className="w-full h-12 text-white rounded-xl active:scale-[0.98] transition-all font-semibold disabled:cursor-not-allowed"
+            style={pinInput.length === 4 ? { background: "#8B8FCC" } : { background: "#E5E8F0", color: "#9BA3BE" }}
           >
             확인
           </button>
-        </motion.div>
-      </div>
-    );
-  }
-
-  // ── step: 이름 입력 ───────────────────────────────────
-  if (step === "name") {
-    return (
-      <div className="min-h-screen bg-[#F5F5F7] flex items-center justify-center px-5">
-        <motion.div className="max-w-[400px] w-full text-center" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
-          <div className="text-4xl mb-6">✍️</div>
-          <p className="text-[20px] font-bold text-[#222222] mb-2 tracking-tight">이름을 알려주세요</p>
-          <p className="text-[12.5px] text-[#929292] mb-8">분석 결과에 표시될 이름이에요</p>
-          <div className="space-y-3 text-left">
-            <input
-              type="text" autoFocus
-              className="w-full h-12 px-4 bg-white border border-[#dddddd] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#ffd1da]/40 focus:border-[#ffd1da] transition-all text-[#222222] placeholder:text-[#929292]"
-              placeholder="예: 지영"
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && nickname.trim()) setStep("write"); }}
-              maxLength={20}
-            />
-            <button
-              disabled={!nickname.trim()}
-              onClick={() => setStep("write")}
-              className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl hover:bg-[#ffb3c4] disabled:bg-[#F0F0F5] disabled:text-[#C7C7CC] active:scale-[0.98] transition-all font-semibold"
-            >
-              다음
-            </button>
-          </div>
-          <button onClick={() => setStep("pin")} className="mt-4 text-[12px] text-[#929292] hover:text-[#636366] transition-colors">
+          <button onClick={() => setStep("name")} className="mt-4 text-[12px] text-[#9BA3BE] hover:text-[#565C7A] transition-colors">
             <ArrowLeft className="inline w-3.5 h-3.5 mr-1" />뒤로
           </button>
         </motion.div>
@@ -181,7 +194,9 @@ export function InviteJoin() {
       ...existing,
       mode: "two-person",
       sessionId: roomId,
+      personA: { name: creatorName },
       personB: { name: bName },
+      myRole: "B",
     }));
 
     navigate(`/waiting/${roomId}?role=B`);
@@ -189,37 +204,38 @@ export function InviteJoin() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F5F5F7]">
-      <header className="bg-white border-b border-[#EBEBF0] sticky top-0 z-20">
+    <div className="min-h-screen bg-[#F6F7FB]">
+      <header className="bg-white border-b border-[#E5E8F0] sticky top-0 z-20">
         <div className="mx-auto max-w-[560px] px-5 h-14 flex items-center">
-          <button onClick={() => setStep("name")} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#F5F5F7] transition-colors">
-            <ArrowLeft className="w-[18px] h-[18px] text-[#636366]" />
+          <button onClick={() => setStep("pin")} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#F6F7FB] transition-colors">
+            <ArrowLeft className="w-[18px] h-[18px] text-[#565C7A]" />
           </button>
         </div>
       </header>
       <main className="mx-auto max-w-[560px] px-5 pb-12">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           <div className="pt-7 mb-5">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#fff5f7] rounded-full mb-3">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#ffd1da]" />
-              <span className="text-[11.5px] text-[#c9485b] font-semibold">{creatorName}님과의 갈등 분석</span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEEEF9] rounded-full mb-3">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#8B8FCC]" />
+              <span className="text-[11.5px] text-[#8B8FCC] font-semibold">{creatorName}님과의 갈등 분석</span>
             </div>
-            <p className="text-[17px] font-bold text-[#222222] mb-1 tracking-tight">{nickname || user.name}님의 이야기</p>
-            <p className="text-[12.5px] text-[#929292]">어떤 상황이었는지, 자유롭게 적어주세요</p>
+            <p className="text-[17px] font-bold text-[#1A1C2E] mb-1 tracking-tight">{nickname || user.name}님의 이야기</p>
+            <p className="text-[12.5px] text-[#9BA3BE]">어떤 상황이었는지, 자유롭게 적어주세요</p>
           </div>
           <div className="relative mb-4">
             <textarea
-              className="w-full min-h-[360px] px-4 py-4 bg-white border border-[#dddddd] rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#ffd1da]/40 focus:border-[#ffd1da] resize-none transition-all text-[#222222] placeholder:text-[#929292] text-[14px] leading-relaxed"
+              className="w-full min-h-[360px] px-4 py-4 bg-white border border-[#E5E8F0] rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#C8CAE8]/60 focus:border-[#8B8FCC] resize-none transition-all text-[#1A1C2E] placeholder:text-[#9BA3BE] text-[14px] leading-relaxed"
               placeholder={`자유롭게 작성해주세요.\n\n• 있었던 사실\n• 나의 해석\n• 느꼈던 감정\n• 바라는 것`}
               value={text}
               onChange={(e) => { if (e.target.value.length <= MAX_CHARS) setText(e.target.value); }}
             />
-            <div className="absolute bottom-3 right-4 text-[10.5px] text-[#929292]">{text.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</div>
+            <div className="absolute bottom-3 right-4 text-[10.5px] text-[#9BA3BE]">{text.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}</div>
           </div>
           <button
             disabled={!text.trim() || isSubmitting}
             onClick={handleSubmit}
-            className="w-full h-12 bg-[#ffd1da] text-[#222222] rounded-xl hover:bg-[#ffb3c4] disabled:bg-[#F0F0F5] disabled:text-[#C7C7CC] active:scale-[0.98] transition-all font-semibold"
+            className="w-full h-12 text-white rounded-xl active:scale-[0.98] transition-all font-semibold"
+            style={text.trim() && !isSubmitting ? { background: "#8B8FCC" } : { background: "#E5E8F0", color: "#9BA3BE" }}
           >
             {isSubmitting ? "저장 중..." : "작성 완료"}
           </button>

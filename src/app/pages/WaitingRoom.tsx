@@ -4,17 +4,6 @@ import { motion, AnimatePresence } from "motion/react";
 import { Copy, Check } from "lucide-react";
 import { api } from "../utils/api";
 
-const STEPS_A = [
-  { emoji: "✅", text: "내 입장 작성 완료" },
-  { emoji: "🔗", text: "상대방이 초대 링크로 참여 중..." },
-  { emoji: "✍️", text: "상대방 작성 완료를 기다리는 중..." },
-];
-
-const STEPS_B = [
-  { emoji: "✅", text: "내 입장 작성 완료" },
-  { emoji: "⏳", text: "상대방 작성 완료를 기다리는 중..." },
-  { emoji: "✨", text: "곧 분석이 시작돼요..." },
-];
 
 export function WaitingRoom() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -28,8 +17,26 @@ export function WaitingRoom() {
   const [analysisFailed, setAnalysisFailed] = useState(false);
 
   const role = searchParams.get("role") || "A";
-  const steps = role === "A" ? STEPS_A : STEPS_B;
-  const inviteLink = `${window.location.origin}/invite/${roomId}`;
+
+  // sessionStorage에서 참여자 이름 읽기
+  const stored = JSON.parse(sessionStorage.getItem("analysisData") || "{}");
+  const myName      = role === "A" ? (stored.personA?.name || "나") : (stored.personB?.name || "나");
+  const partnerName = role === "A" ? (stored.personB?.name || "상대방") : (stored.personA?.name || "상대방");
+
+  const steps = role === "A"
+    ? [
+        { emoji: "✅", text: "내 입장 작성 완료" },
+        { emoji: "🔗", text: `${partnerName}이(가) 초대 링크로 참여 중...` },
+        { emoji: "✍️", text: `${partnerName} 작성 완료를 기다리는 중...` },
+      ]
+    : [
+        { emoji: "✅", text: "내 입장 작성 완료" },
+        { emoji: "⏳", text: `${partnerName} 작성 완료를 기다리는 중...` },
+        { emoji: "✨", text: "곧 분석이 시작돼요..." },
+      ];
+
+  // 초대 링크에 내 닉네임 포함 (상대방이 내 이름 볼 수 있도록)
+  const inviteLink = `${window.location.origin}/invite/${roomId}${myName !== "나" ? `?from=${encodeURIComponent(myName)}` : ""}`;
 
   /* poll backend for partner completion */
   useEffect(() => {
@@ -158,14 +165,14 @@ export function WaitingRoom() {
         </motion.div>
 
         <p className="text-[20px] font-bold text-[#222222] mb-2 tracking-tight">
-          {readyToGo ? "분석 시작할게요!" : "상대방을 기다리고 있어요"}
+          {readyToGo ? "분석 시작할게요!" : `${partnerName}을(를) 기다리고 있어요`}
         </p>
         <p className="text-[13.5px] text-[#6a6a6a] mb-10 font-normal leading-relaxed">
           {readyToGo
             ? "두 분 모두 작성이 완료되었어요.\n대시보드로 이동 중이에요."
             : role === "A"
-              ? "상대가 초대 링크로 참여하고 작성을 마치면\n자동으로 분석이 시작돼요."
-              : "상대방이 작성을 완료하면\n자동으로 분석이 시작돼요."}
+              ? `${partnerName}이(가) 초대 링크로 참여하고 작성을 마치면\n자동으로 분석이 시작돼요.`
+              : `${partnerName}이(가) 작성을 완료하면\n자동으로 분석이 시작돼요.`}
         </p>
 
         {/* Progress bar */}
@@ -252,8 +259,8 @@ export function WaitingRoom() {
         {!readyToGo && (
           <div className="flex gap-2 justify-center mb-6">
             {[
-              { label: role === "A" ? "나" : "상대", done: role === "A" ? personADone : personBDone },
-              { label: role === "A" ? "상대" : "나", done: role === "A" ? personBDone : personADone },
+              { label: myName, done: role === "A" ? personADone : personBDone },
+              { label: partnerName, done: role === "A" ? personBDone : personADone },
             ].map((p) => (
               <div
                 key={p.label}

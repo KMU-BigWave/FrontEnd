@@ -89,10 +89,10 @@ const DASHBOARD_DATA_TEMPLATE = {
 };
 
 const CATEGORIES = [
-  { id: "facts" as const,           label: "사실", en: "Facts",      icon: ListChecks,   color: "#7C8CF8", bg: "#EEF0FF" },
-  { id: "interpretations" as const, label: "해석", en: "Interpret",  icon: BrainCircuit, color: "#F0A040", bg: "#FEF5E7" },
-  { id: "emotions" as const,        label: "감정", en: "Emotions",   icon: HeartPulse,   color: "#E06B8B", bg: "#FDF0F4" },
-  { id: "needs" as const,           label: "요구", en: "Needs",      icon: Send,         color: "#3BAF85", bg: "#E6F7F2" },
+  { id: "facts" as const,           label: "사실", en: "Facts",      icon: ListChecks,   color: "#6B8CF5", bg: "transparent" },
+  { id: "interpretations" as const, label: "해석", en: "Interpret",  icon: BrainCircuit, color: "#E8A04A", bg: "transparent" },
+  { id: "emotions" as const,        label: "감정", en: "Emotions",   icon: HeartPulse,   color: "#E07898", bg: "transparent" },
+  { id: "needs" as const,           label: "요구", en: "Needs",      icon: Send,         color: "#3DB389", bg: "transparent" },
 ];
 
 type DashboardData = typeof DASHBOARD_DATA_TEMPLATE;
@@ -119,10 +119,10 @@ const TENSION_STYLES: Record<string, { color: string; bg: string }> = {
 /* ═══════════════════════════════════════════════
    Design Tokens
 ═══════════════════════════════════════════════ */
-const A_COLOR   = "#D94F72";  // rose — 주체 A
-const B_COLOR   = "#5B5FCF";  // indigo — 주체 B
-const A_LIGHT   = "#FFE8EF";
-const B_LIGHT   = "#EAEBFF";
+const A_COLOR   = "#D95A78";  // rose — 주체 A
+const B_COLOR   = "#6B6FCC";  // indigo — 주체 B
+const A_LIGHT   = "#FFF5F7";
+const B_LIGHT   = "#F3F3FC";
 const CARD_SHADOW = "0 1px 4px rgba(0,0,0,0.05), 0 4px 16px rgba(0,0,0,0.04)";
 
 /* ═══════════════════════════════════════════════
@@ -183,57 +183,87 @@ function buildMindmapData({
   const { sections, diagramKeywords, resultText } = llmResult;
   const ev = evidenceResult?.keywordEvidence;
 
-  const firstFact = diagramKeywords.facts[0] || diagramKeywords.coreConflict[0] || "";
-  const factEv = ev?.facts?.find(({ keyword }) => keyword === firstFact)?.evidence[0] ?? null;
+  // evidence map으로 원문 소스 텍스트 매핑
+  const makeEvMap = (section: typeof ev extends undefined ? never : NonNullable<typeof ev>[keyof NonNullable<typeof ev>]) =>
+    new Map((section ?? []).map(({ keyword, evidence }) => [keyword, evidence[0] ?? null]));
 
-  const interpKws = diagramKeywords.interpretations;
-  const interpEvidenceMap = new Map(
-    (ev?.interpretations ?? []).map(({ keyword, evidence }) => [keyword, evidence[0] ?? null])
-  );
-  const makeInterpKw = (kw: string): KeywordItem => {
-    const e = interpEvidenceMap.get(kw);
-    return { text: shortenForChip(kw), sourceText: e?.text ?? kw, sourceKind: e?.text ? "input" : "analysis", confidence: e?.confidencePercent ?? 0 };
-  };
-  const interpMe      = interpKws.filter((_, i) => i % 2 === 0).map(makeInterpKw);
-  const interpPartner = interpKws.filter((_, i) => i % 2 === 1).map(makeInterpKw);
+  const kwFromList = (
+    list: string[],
+    evMap: Map<string, { text: string; confidencePercent: number; speaker: string } | null>,
+  ): KeywordItem[] =>
+    list.map((kw) => {
+      const e = evMap.get(kw);
+      return {
+        text: shortenForChip(kw),
+        sourceText: e?.text ?? kw,
+        sourceKind: (e?.text ? "input" : "analysis") as KeywordItem["sourceKind"],
+        confidence: e?.confidencePercent ?? 0,
+      };
+    });
 
-  const interpretationBranch = firstFact
+  const factEvMap   = makeEvMap(ev?.facts);
+  const interpEvMap = makeEvMap(ev?.interpretations);
+  const emotEvMap   = makeEvMap(ev?.emotions);
+  const needEvMap   = makeEvMap(ev?.needs);
+
+  const dk = diagramKeywords;
+
+  // 해석 분기: 공통 사실 키워드를 허브로, A해석/B해석을 분기로
+  const hubFact = dk.common?.facts?.[0] || dk.coreConflict?.[0] || "";
+  const hubEv = factEvMap.get(hubFact) ?? null;
+  const interpretationBranch = (dk.a?.interpretations?.length || dk.b?.interpretations?.length)
     ? [{
         id: "api-interpretation",
         fact: {
-          text: shortenForChip(firstFact),
-          sourceText: factEv?.text ?? firstFact,
-          sourceKind: (factEv?.text ? "input" : "analysis") as KeywordItem["sourceKind"],
-          confidence: factEv?.confidencePercent ?? 0,
+          text: shortenForChip(hubFact || "해석"),
+          sourceText: hubEv?.text ?? hubFact,
+          sourceKind: (hubEv?.text ? "input" : "analysis") as KeywordItem["sourceKind"],
+          confidence: hubEv?.confidencePercent ?? 0,
         },
-        me: interpMe,
-        partner: interpPartner,
+        me:      kwFromList(dk.a?.interpretations ?? [], interpEvMap),
+        partner: kwFromList(dk.b?.interpretations ?? [], interpEvMap),
       }]
     : [];
 
   return {
-    title: diagramKeywords.coreConflict[0] || "분석 결과",
+    title: dk.coreConflict?.[0] || "분석 결과",
     date, relationship,
     me: { name: aName },
     partner: { name: bName },
     mindmap: {
-      fact:           makeMindmapGroup(diagramKeywords.facts,           ev?.facts),
-      interpretation: makeMindmapGroup(diagramKeywords.interpretations, ev?.interpretations),
-      emotion:        makeMindmapGroup(diagramKeywords.emotions,        ev?.emotions),
-      request:        makeMindmapGroup(diagramKeywords.needs,           ev?.needs),
+      fact: {
+        meOnly:      kwFromList(dk.a?.facts     ?? [], factEvMap),
+        partnerOnly: kwFromList(dk.b?.facts     ?? [], factEvMap),
+        shared:      kwFromList(dk.common?.facts ?? [], factEvMap),
+      },
+      interpretation: {
+        meOnly:      kwFromList(dk.a?.interpretations ?? [], interpEvMap),
+        partnerOnly: kwFromList(dk.b?.interpretations ?? [], interpEvMap),
+        shared:      [],
+      },
+      emotion: {
+        meOnly:      kwFromList(dk.a?.emotions     ?? [], emotEvMap),
+        partnerOnly: kwFromList(dk.b?.emotions     ?? [], emotEvMap),
+        shared:      kwFromList(dk.common?.emotions ?? [], emotEvMap),
+      },
+      request: {
+        meOnly:      kwFromList(dk.a?.needs     ?? [], needEvMap),
+        partnerOnly: kwFromList(dk.b?.needs     ?? [], needEvMap),
+        shared:      kwFromList(dk.common?.needs ?? [], needEvMap),
+      },
     },
     interpretationBranches: interpretationBranch,
     conflictPeak: { type: "", category: "", description: "" },
     aiRestatements: {
-      fact: { me: sections.facts.a || "", partner: sections.facts.b || "" },
+      fact:           { me: sections.facts.a || "",           partner: sections.facts.b || "" },
       interpretation: { me: sections.interpretations.a || "", partner: sections.interpretations.b || "" },
-      emotion: { me: sections.emotions.a || "", partner: sections.emotions.b || "" },
-      request: { me: sections.needs.a || "", partner: sections.needs.b || "" },
+      emotion:        { me: sections.emotions.a || "",        partner: sections.emotions.b || "" },
+      request:        { me: sections.needs.a || "",           partner: sections.needs.b || "" },
     },
     aiSummaryAndRestatement: {
-      neutralSummary: resultText,
-      aFromBPerspective: sections.interpretations.b || sections.emotions.b || "",
-      bFromAPerspective: sections.interpretations.a || sections.emotions.a || "",
+      neutralSummary:     resultText,
+      aFromBPerspective:  sections.interpretations.b || sections.emotions.b || "",
+      bFromAPerspective:  sections.interpretations.a || sections.emotions.a || "",
       confidence: 0,
     },
     clarifyingQuestions: sections.questions,
@@ -299,13 +329,14 @@ function SectionLabel({ label, icon: Icon, color = "#A1A1AA" }: {
 interface SvgLine { x1: number; y1: number; x2: number; y2: number; color: string; }
 
 function FeinNodeVenn({
-  catData, cat, aLabel, bLabel, pick, sel,
+  catData, cat, aLabel, bLabel, pick, sel, myRole,
 }: {
   catData: { meOnly: KeywordItem[]; shared: KeywordItem[]; partnerOnly: KeywordItem[] };
   cat: typeof CATEGORIES[number];
   aLabel: string; bLabel: string;
   pick: (item: KeywordItem, rect: DOMRect, side: "A" | "B" | "shared") => void;
   sel: SelectedNode | null;
+  myRole?: "A" | "B" | null;
 }) {
   return (
     <div style={{ containerType: "inline-size" }}>
@@ -326,7 +357,10 @@ function FeinNodeVenn({
           {catData.meOnly.length > 0
             ? catData.meOnly.map((item, i) => (
                 <KwBtn key={i} item={item}
-                  onSelect={(it, rect) => pick(it, rect, "A")}
+                  onSelect={(it, rect) => {
+                    if (myRole === "B") return;
+                    pick(it, rect, "A");
+                  }}
                   isSelected={sel?.text === item.text}
                   className="w-full px-1.5 py-[5px] rounded-lg text-center break-keep leading-tight border hover:opacity-80 transition-opacity"
                   style={{
@@ -356,10 +390,11 @@ function FeinNodeVenn({
                 <KwBtn key={i} item={item}
                   onSelect={(it, rect) => pick(it, rect, "shared")}
                   isSelected={sel?.text === item.text}
-                  className="w-full px-1.5 py-[5px] rounded-lg font-bold text-white text-center break-keep leading-tight hover:opacity-80 transition-opacity"
+                  className="w-full px-1.5 py-[5px] rounded-lg text-center break-keep leading-tight border bg-white transition-colors"
                   style={{
                     fontSize: "calc(0.40cqw + 6.5px)",
-                    background: cat.color,
+                    color: cat.color,
+                    borderColor: `${cat.color}60`,
                   }} />
               ))
             : <span className="text-[#D4D4D8] py-1 text-[10px]">—</span>
@@ -380,7 +415,10 @@ function FeinNodeVenn({
           {catData.partnerOnly.length > 0
             ? catData.partnerOnly.map((item, i) => (
                 <KwBtn key={i} item={item}
-                  onSelect={(it, rect) => pick(it, rect, "B")}
+                  onSelect={(it, rect) => {
+                    if (myRole === "A") return;
+                    pick(it, rect, "B");
+                  }}
                   isSelected={sel?.text === item.text}
                   className="w-full px-1.5 py-[5px] rounded-lg text-center break-keep leading-tight border hover:opacity-80 transition-opacity"
                   style={{
@@ -402,12 +440,13 @@ function FeinNodeVenn({
    FEIN 노드 내부 — 해석 분기 트리
 ═══════════════════════════════════════════════ */
 function FeinNodeInterp({
-  branches, aLabel, bLabel, pick, sel,
+  branches, aLabel, bLabel, pick, sel, myRole,
 }: {
   branches: DashboardData["interpretationBranches"];
   aLabel: string; bLabel: string;
   pick: (item: KeywordItem, rect: DOMRect, side: "A" | "B" | "shared") => void;
   sel: SelectedNode | null;
+  myRole?: "A" | "B" | null;
 }) {
   if (branches.length === 0) {
     return (
@@ -423,12 +462,11 @@ function FeinNodeInterp({
           {/* 허브 칩 */}
           <KwBtn item={branch.fact} isSelected={sel?.text === branch.fact.text}
             onSelect={(it, rect) => pick(it, rect, "shared")}
-            className="px-2.5 py-1.5 rounded-xl font-bold text-center break-keep border"
+            className="px-2.5 py-1.5 rounded-xl font-semibold text-center break-keep border bg-white"
             style={{
               fontSize: "calc(0.52cqw + 7.5px)",
-              color: "#C9485B",
-              background: "#FFF5F7",
-              borderColor: "#FFCDD7",
+              color: "#6B8CF5",
+              borderColor: "#6B8CF580",
             }}
           />
 
@@ -450,7 +488,10 @@ function FeinNodeInterp({
               {branch.me.length > 0
                 ? branch.me.map((item, i) => (
                     <KwBtn key={i} item={item} isSelected={sel?.text === item.text}
-                      onSelect={(it, rect) => pick(it, rect, "A")}
+                      onSelect={(it, rect) => {
+                        if (myRole === "B") return;
+                        pick(it, rect, "A");
+                      }}
                       className="w-full px-2 py-1 rounded-lg text-center break-keep leading-snug border transition-colors"
                       style={{
                         fontSize: "calc(0.44cqw + 7px)",
@@ -470,7 +511,10 @@ function FeinNodeInterp({
               {branch.partner.length > 0
                 ? branch.partner.map((item, i) => (
                     <KwBtn key={i} item={item} isSelected={sel?.text === item.text}
-                      onSelect={(it, rect) => pick(it, rect, "B")}
+                      onSelect={(it, rect) => {
+                        if (myRole === "A") return;
+                        pick(it, rect, "B");
+                      }}
                       className="w-full px-2 py-1 rounded-lg text-center break-keep leading-snug border transition-colors"
                       style={{
                         fontSize: "calc(0.44cqw + 7px)",
@@ -550,21 +594,19 @@ function FeinDiagram({
       {svgDim.h > 0 && (
         <svg className="absolute inset-0 pointer-events-none" style={{ width: svgDim.w, height: svgDim.h, zIndex: 0 }}>
           <defs>
-            {CATEGORIES.map((cat, i) => (
-              <linearGradient key={i} id={`lg-${i}`} x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor={cat.color} stopOpacity="0.55" />
-                <stop offset="100%" stopColor={cat.color} stopOpacity="0.15" />
-              </linearGradient>
-            ))}
+            <linearGradient id="lg-neutral" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#9CA3AF" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#9CA3AF" stopOpacity="0.1" />
+            </linearGradient>
           </defs>
           {lines.map((l, i) => (
             <g key={i}>
               <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-                stroke={`url(#lg-${i})`} strokeWidth="1.5" strokeDasharray="5 5" strokeLinecap="round" />
-              <circle cx={l.x2} cy={l.y2} r="3.5" fill={l.color} opacity="0.5" />
+                stroke="url(#lg-neutral)" strokeWidth="1.5" strokeDasharray="5 5" strokeLinecap="round" />
+              <circle cx={l.x2} cy={l.y2} r="3" fill="#9CA3AF" opacity="0.35" />
             </g>
           ))}
-          {lines[0] && <circle cx={lines[0].x1} cy={lines[0].y1} r="6" fill="#C9485B" opacity="0.15" />}
+          {lines[0] && <circle cx={lines[0].x1} cy={lines[0].y1} r="6" fill="#9CA3AF" opacity="0.2" />}
         </svg>
       )}
 
@@ -573,17 +615,17 @@ function FeinDiagram({
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
         className="relative z-10 mb-5"
       >
-        <div className="rounded-2xl px-5 py-4 text-center border border-[#FFD0DA]"
+        <div className="rounded-2xl px-5 py-4 text-center border border-[#E5E7EB]"
           style={{
-            background: "linear-gradient(135deg, #FFF8FA 0%, #FFF0F3 100%)",
-            boxShadow: "0 2px 20px rgba(201,72,91,0.10), 0 1px 4px rgba(201,72,91,0.06)",
+            background: "#FAFAFA",
+            boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
           }}>
-          <p className="text-[9px] font-black text-[#C9485B]/50 tracking-[0.18em] uppercase mb-2.5">핵심 갈등</p>
+          <p className="text-[9px] font-bold text-[#9CA3AF] tracking-[0.18em] uppercase mb-2.5">핵심 갈등</p>
           <div className="flex flex-wrap justify-center gap-2">
             {diagramKeywords.coreConflict.map((kw) => (
               <span key={kw}
-                className="px-3.5 py-1.5 bg-white border border-[#FFD0DA] rounded-full text-[13px] font-bold text-[#C9485B]"
-                style={{ boxShadow: "0 1px 6px rgba(201,72,91,0.12)" }}>
+                className="px-3.5 py-1.5 bg-white rounded-full text-[13px] font-semibold"
+                style={{ color: "#D95A78", border: "1.5px solid #D95A7860" }}>
                 {kw}
               </span>
             ))}
@@ -605,17 +647,11 @@ function FeinDiagram({
               initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.18 + idx * 0.07, type: "spring", stiffness: 260, damping: 24 }}
               className="bg-white rounded-2xl border overflow-hidden flex flex-col"
-              style={{
-                borderColor: `${cat.color}30`,
-                boxShadow: `0 2px 14px ${cat.color}12, 0 1px 4px rgba(0,0,0,0.04)`,
-              }}
+              style={{ borderColor: `${cat.color}50`, boxShadow: `0 1px 8px ${cat.color}10` }}
             >
               {/* 카드 헤더 */}
-              <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0"
-                style={{
-                  background: cat.bg,
-                  borderBottom: `1px solid ${cat.color}20`,
-                }}>
+              <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 bg-white"
+                style={{ borderBottom: `1px solid ${cat.color}30` }}>
                 <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0"
                   style={{ backgroundColor: `${cat.color}25`, color: cat.color }}>
                   <Icon size={10} strokeWidth={2.5} />
@@ -630,9 +666,9 @@ function FeinDiagram({
 
               {/* 시각화 */}
               {isInterp ? (
-                <FeinNodeInterp branches={mindmapData.interpretationBranches} aLabel={aName} bLabel={bName} pick={pick} sel={sel} />
+                <FeinNodeInterp branches={mindmapData.interpretationBranches} aLabel={aName} bLabel={bName} pick={pick} sel={sel} myRole={myRole} />
               ) : (
-                <FeinNodeVenn catData={getMmCat(catId)} cat={cat} aLabel={aName} bLabel={bName} pick={pick} sel={sel} />
+                <FeinNodeVenn catData={getMmCat(catId)} cat={cat} aLabel={aName} bLabel={bName} pick={pick} sel={sel} myRole={myRole} />
               )}
             </motion.div>
           );
@@ -658,9 +694,8 @@ function FixedTooltip({ node, myRole, onClose }: {
   const below = window.innerHeight - node.rect.bottom > 160;
   const top = below ? node.rect.bottom + 8 : node.rect.top - 8;
 
+  // 본인 키워드만 원문 표시. 공통(shared)·상대방 키워드는 원문 숨김.
   const canSeeSource =
-    node.sourceKind !== "input" ||
-    !node.side || node.side === "shared" ||
     !myRole ||
     (node.side === "A" && myRole === "A") ||
     (node.side === "B" && myRole === "B");
@@ -966,8 +1001,12 @@ export function DashboardPage() {
       setIsLoading(false);
       return;
     }
-    if (parsed.personA?.name)
-      setPersonNames({ a: parsed.personA.name, b: parsed.personB?.name ?? "B" });
+    if (parsed.personA?.name || parsed.personB?.name) {
+      setPersonNames({
+        a: parsed.personA?.name || "A",
+        b: parsed.personB?.name || "B",
+      });
+    }
     if (parsed.myRole === "A" || parsed.myRole === "B") setMyRole(parsed.myRole);
 
     const sessionId = parsed.sessionId;
@@ -990,6 +1029,16 @@ export function DashboardPage() {
       ]).then(([dual, evidence]) => {
         setDualResult(dual);
         setEvidenceResult(evidence);
+        // API 응답에서 참여자 이름 반영 (sessionStorage보다 우선)
+        // 백엔드 API 응답의 participants로 이름 설정 (가장 정확)
+        if (dual?.participants?.length) {
+          const a = dual.participants.find((p) => p.role === "A");
+          const b = dual.participants.find((p) => p.role === "B");
+          setPersonNames({
+            a: a?.name || "A",
+            b: b?.name || "B",
+          });
+        }
       }).finally(() => setIsLoading(false));
     };
 
@@ -1205,28 +1254,6 @@ export function DashboardPage() {
               </p>
             </div>
 
-            {/* 관계 회복 키워드 */}
-            {diagramKeywords.relationshipShift.length > 0 && (
-              <div className="mt-3 rounded-2xl border border-[#EAEAEF] px-4 py-3.5 flex items-start gap-3"
-                   style={{ background: "#F7FDF9", boxShadow: CARD_SHADOW }}>
-                <div className="w-6 h-6 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
-                     style={{ background: "#D4F2E7", color: "#28916A" }}>
-                  <HelpCircle size={12} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <p className="text-[10.5px] font-bold mb-2" style={{ color: "#28916A" }}>관계 회복 전환점</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {diagramKeywords.relationshipShift.map((kw) => (
-                      <span key={kw}
-                            className="px-2.5 py-1 rounded-full text-[11.5px] font-semibold"
-                            style={{ background: "#D4F2E7", color: "#1E7A57" }}>
-                        {kw}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
           </motion.div>
 
           {/* 상대방의 언어로 듣기 */}

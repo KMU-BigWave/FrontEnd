@@ -60,12 +60,15 @@ export type LlmResult = {
   };
   diagramKeywords: {
     coreConflict: string[];
-    facts: string[];
-    interpretations: string[];
-    emotions: string[];
-    needs: string[];
-    relationshipShift: string[];
-    questions: string[];
+    // SINGLE 모드: flat 배열
+    facts?: string[];
+    interpretations?: string[];
+    emotions?: string[];
+    needs?: string[];
+    // DUAL 모드: a/b/common 구조
+    a?: { facts: string[]; interpretations: string[]; emotions: string[]; needs: string[] };
+    b?: { facts: string[]; interpretations: string[]; emotions: string[]; needs: string[] };
+    common?: { facts: string[]; emotions: string[]; needs: string[] };
   };
   sourceSnapshot?: unknown;
   createdAt: string;
@@ -124,6 +127,12 @@ export type BasicAnalysisResult = {
 
 export type DualAnalysisResult = {
   session: AnalysisSession;
+  participants?: Array<{
+    role: "A" | "B";
+    name: string;
+    gender?: string | null;
+    age?: number | null;
+  }>;
   statements: {
     A: AnalysisStatement[];
     B: AnalysisStatement[];
@@ -323,6 +332,7 @@ export const api = {
     relationshipType: RelationshipType;
     mode?: SessionMode;
     roomPassword: string;
+    nickname?: string;
   }) {
     return request<Session>("/sessions", {
       method: "POST",
@@ -330,10 +340,10 @@ export const api = {
     });
   },
 
-  joinSession(sessionId: string, roomPassword: string) {
+  joinSession(sessionId: string, roomPassword: string, nickname?: string) {
     return request<{ sessionId: string }>(`/sessions/${sessionId}/join`, {
       method: "POST",
-      body: JSON.stringify({ roomPassword }),
+      body: JSON.stringify({ roomPassword, ...(nickname ? { nickname } : {}) }),
     });
   },
 

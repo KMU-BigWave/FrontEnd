@@ -16,7 +16,6 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "../components/ui/tabs";
 import { SoloAnalysisLoadingView, SOLO_LOADING_STEPS } from "./SoloLoading";
 import {
   api,
@@ -180,15 +179,25 @@ function buildSoloDashboardData({
   llm: LlmResult | null;
   evidence: LlmEvidenceResult | null;
 }): SoloDashboardData {
-  const keywords = mergeEvidenceKeywords(
-    keywordsFromStatements(single?.statements ?? []),
-    evidence,
-  );
   const sections = llm?.sections;
-  const diagramKeywords = llm?.diagramKeywords;
+  const dk = llm?.diagramKeywords;
+
+  // GPT가 뽑은 diagramKeywords(flat) 우선 사용, 없으면 evidence → statements 폴백
+  const llmKeywords: SoloDashboardData["keywords"] = {
+    fact:           (dk?.facts ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
+    interpretation: (dk?.interpretations ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
+    emotion:        (dk?.emotions ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
+    request:        (dk?.needs ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
+  };
+
+  const hasLlmKeywords = Object.values(llmKeywords).some((arr) => arr.length > 0);
+  const keywords = hasLlmKeywords
+    ? llmKeywords
+    : mergeEvidenceKeywords(keywordsFromStatements(single?.statements ?? []), evidence);
+
   const coreDesire =
-    diagramKeywords?.needs?.[0] ??
-    diagramKeywords?.coreConflict?.[0] ??
+    dk?.needs?.[0] ??
+    dk?.coreConflict?.[0] ??
     "";
   const mainInsight =
     sections?.interpretations?.self ||
@@ -202,7 +211,7 @@ function buildSoloDashboardData({
     "";
 
   return {
-    title: diagramKeywords?.coreConflict?.[0] ? `${diagramKeywords.coreConflict[0]} 정리` : "생각 정리 결과",
+    title: dk?.coreConflict?.[0] ? `${dk.coreConflict[0]} 정리` : "생각 정리 결과",
     date: formatDate(llm?.createdAt ?? single?.session.createdAt),
     keywords,
     aiSummary: llm?.resultText || "",
@@ -396,14 +405,12 @@ function BranchDiagram({
   );
 }
 
-/* ── Branch Visualization with Tabs ── */
-function BranchVisualization({ data }: { data: SoloDashboardData }) {
-  const [activeTab, setActiveTab] = useState("fact");
+/* ── Solo FEIN 2×2 Grid ── */
+function SoloFeinGrid({ data }: { data: SoloDashboardData }) {
   const [selectedNode, setSelectedNode] = useState<SelectedNode | null>(null);
 
   const handleSelect = (item: KeywordItem, rect: DOMRect) => {
-    if (selectedNode?.text === item.text) setSelectedNode(null);
-    else setSelectedNode({ ...item, rect });
+    setSelectedNode(prev => prev?.text === item.text ? null : { ...item, rect });
   };
 
   useEffect(() => {
@@ -416,51 +423,84 @@ function BranchVisualization({ data }: { data: SoloDashboardData }) {
     };
   }, []);
 
-  useEffect(() => { setSelectedNode(null); }, [activeTab]);
-
   return (
-    <div className="px-4 sm:px-5 py-5">
+    <div className="px-4 sm:px-5 pt-5 pb-3">
       <AnimatePresence>
         {selectedNode && (
           <FixedTooltip node={selectedNode} onClose={() => setSelectedNode(null)} />
         )}
       </AnimatePresence>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full justify-start h-auto bg-transparent border-b border-[#EBEBF0] rounded-none p-0 mb-5 overflow-x-auto flex-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          {CATEGORIES.map((cat) => (
-            <TabsTrigger
-              key={cat.id}
-              value={cat.id}
-              className="px-4 py-3 rounded-none border-b-2 font-semibold text-[13.5px] transition-colors whitespace-nowrap -mb-[1px] data-[state=active]:text-[#1C1C1E] data-[state=inactive]:border-transparent data-[state=inactive]:text-[#AEAEB2]"
-              style={{ borderColor: activeTab === cat.id ? cat.color : "transparent" }}
-            >
-              {cat.label} {cat.en}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+      {/* 핵심 포인트 허브 */}
+      {data.thoughtPoint.coreDesire && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+          className="mb-4 rounded-2xl border border-[#E5E7EB] bg-white px-5 py-4 text-center"
+          style={{ boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}
+        >
+          <p className="text-[9px] font-bold text-[#9CA3AF] tracking-[0.18em] uppercase mb-2">핵심 포인트</p>
+          <span
+            className="inline-block px-4 py-1.5 rounded-full text-[13px] font-semibold bg-white"
+            style={{ color: "#8AB4D4", border: "1.5px solid #8AB4D460" }}
+          >
+            {data.thoughtPoint.coreDesire}
+          </span>
+        </motion.div>
+      )}
 
-        {CATEGORIES.map((cat) => (
-          <TabsContent key={cat.id} value={cat.id} className="mt-0 outline-none">
+      {/* 2×2 FEIN 그리드 */}
+      <div className="grid grid-cols-2 gap-3">
+        {CATEGORIES.map((cat, idx) => {
+          const Icon = cat.icon;
+          const items = data.keywords[cat.id];
+          return (
             <motion.div
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.25 }}
-              className="bg-white rounded-2xl border border-[#EBEBF0]"
+              key={cat.id}
+              initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 + idx * 0.07, type: "spring", stiffness: 260, damping: 24 }}
+              className="bg-white rounded-2xl border overflow-hidden"
+              style={{ borderColor: `${cat.color}50`, boxShadow: `0 1px 8px ${cat.color}10` }}
             >
-              <div className="flex items-center justify-between px-5 pt-4 pb-0">
-                <span className="text-[11.5px] text-[#AEAEB2] font-medium">키워드를 탭하면 원문이 보여요</span>
+              {/* 카드 헤더 */}
+              <div className="flex items-center gap-2 px-3 py-2 bg-white"
+                   style={{ borderBottom: `1px solid ${cat.color}30` }}>
+                <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0"
+                     style={{ backgroundColor: `${cat.color}20`, color: cat.color }}>
+                  <Icon size={10} strokeWidth={2.5} />
+                </div>
+                <span className="text-[11px] font-bold" style={{ color: cat.color }}>{cat.label}</span>
+                <span className="ml-auto text-[8px] font-semibold opacity-40 tracking-wide" style={{ color: cat.color }}>{cat.en}</span>
               </div>
-              <BranchDiagram
-                items={data.keywords[cat.id]}
-                cat={cat}
-                onSelect={handleSelect}
-                selectedNode={selectedNode}
-              />
+
+              {/* 키워드 칩 */}
+              <div className="p-2.5 flex flex-col gap-1.5" style={{ containerType: "inline-size" }}>
+                {items.length > 0 ? (
+                  items.map((item, i) => (
+                    <motion.button
+                      key={i}
+                      initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.2 + idx * 0.07 + i * 0.04 }}
+                      onClick={(e) => { e.stopPropagation(); handleSelect(item, e.currentTarget.getBoundingClientRect()); }}
+                      className={`w-full px-2.5 py-[6px] rounded-xl text-center break-keep leading-tight border bg-white transition-all active:scale-95 ${selectedNode?.text === item.text ? "ring-2 ring-offset-1" : "hover:opacity-80"}`}
+                      style={{
+                        fontSize: "calc(0.45cqw + 7px)",
+                        color: cat.color,
+                        borderColor: `${cat.color}50`,
+                        ringColor: cat.color,
+                      } as React.CSSProperties}
+                    >
+                      {item.text}
+                    </motion.button>
+                  ))
+                ) : (
+                  <span className="text-[11px] text-[#C7C7CC] py-3 text-center block">—</span>
+                )}
+              </div>
             </motion.div>
-          </TabsContent>
-        ))}
-      </Tabs>
+          );
+        })}
+      </div>
+      <p className="text-center text-[10px] text-[#B0B0BA] mt-3 tracking-wide">키워드를 탭하면 원문을 확인할 수 있어요</p>
     </div>
   );
 }
@@ -585,8 +625,8 @@ export function SoloDashboard() {
 
         {!apiError && (
           <>
-        {/* Branching Visualization */}
-        <BranchVisualization data={data} />
+        {/* FEIN 2×2 그리드 */}
+        <SoloFeinGrid data={data} />
 
         {/* Section 1: AI 요약 */}
         <div className="px-4 sm:px-5 mb-4">
