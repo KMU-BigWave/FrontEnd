@@ -139,7 +139,7 @@ export function History() {
     <div className="min-h-screen bg-[#f7f7f7]">
       {/* Header */}
       <header className="bg-white border-b border-[#dddddd] sticky top-0 z-20">
-        <div className="mx-auto max-w-[480px] px-5 h-14 flex items-center gap-3">
+        <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center gap-3">
           <button
             onClick={() => navigate("/home")}
             className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#f7f7f7] transition-colors"
@@ -150,7 +150,7 @@ export function History() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[480px] px-5 pb-12">
+      <main className="mx-auto max-w-[1120px] px-5 pb-12">
         {isLoading ? (
           <div className="text-center py-24">
             <Loader2 className="w-8 h-8 text-[#c9485b] animate-spin mx-auto mb-4" />
@@ -179,8 +179,9 @@ export function History() {
             <p className="text-[13px] text-[#929292]">새로운 분석을 시작해보세요</p>
           </motion.div>
         ) : (
-          <div className="pt-4 space-y-2">
-            <p className="text-[12px] text-[#929292] font-medium mb-3">총 {items.length}개의 기록</p>
+          <div className="pt-4">
+            <p className="text-[12px] text-[#929292] font-medium mb-4">총 {items.length}개의 기록</p>
+            <div className="space-y-4">
             <AnimatePresence>
               {items.map((item, idx) => (
                 <motion.div
@@ -213,21 +214,21 @@ export function History() {
                       <p className="text-[14px] font-semibold text-[#222222] truncate leading-tight mb-0.5">
                         {item.title}
                       </p>
-                      <p className="text-[12px] text-[#929292] truncate">{item.summary}</p>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <div className="flex items-center gap-1 text-[10.5px] text-[#AEAEB2]">
+                      <p className="text-[12px] text-[#929292] leading-relaxed break-keep">{item.summary}</p>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+                        <div className="flex items-center gap-1 text-[10.5px] text-[#AEAEB2] whitespace-nowrap shrink-0">
                           <Calendar size={10} />
                           {item.date}
                         </div>
-                        <span className="text-[10.5px] text-[#c9485b] font-medium">
+                        <span className="text-[10.5px] text-[#c9485b] font-medium whitespace-nowrap shrink-0">
                           {RELATIONSHIP_LABELS[item.relationshipType] ?? "관계"}
                         </span>
                         {item.mode === "solo" && (
-                          <span className="px-1.5 py-0.5 bg-[#fff5f7] text-[#c9485b] rounded-md text-[10px] font-semibold">
+                          <span className="px-1.5 py-0.5 bg-[#fff5f7] text-[#c9485b] rounded-md text-[10px] font-semibold whitespace-nowrap shrink-0">
                             생각정리
                           </span>
                         )}
-                        <span className="px-1.5 py-0.5 bg-[#F5F5F7] text-[#636366] rounded-md text-[10px] font-semibold">
+                        <span className="px-1.5 py-0.5 bg-[#F5F5F7] text-[#636366] rounded-md text-[10px] font-semibold whitespace-nowrap shrink-0">
                           {STATUS_LABELS[item.status] ?? item.status}
                         </span>
                       </div>
@@ -247,6 +248,7 @@ export function History() {
                 </motion.div>
               ))}
             </AnimatePresence>
+            </div>
           </div>
         )}
       </main>

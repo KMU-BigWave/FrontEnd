@@ -17,7 +17,7 @@ export function SettingsPage() {
   return (
     <div className="min-h-screen bg-[#FFFBFC]">
       <header className="sticky top-0 z-20 bg-[#FFFBFC]/80 backdrop-blur-lg">
-        <div className="mx-auto max-w-[480px] px-5 h-14 flex items-center gap-3">
+        <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center gap-3">
           <button onClick={() => navigate('/home')} className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors">
             <ArrowLeft className="w-[18px] h-[18px] text-gray-500" />
           </button>
@@ -25,7 +25,7 @@ export function SettingsPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[480px] px-5 pb-12">
+      <main className="mx-auto max-w-[1120px] px-5 pb-12">
         {/* Profile card */}
         <motion.div
           className="mt-4 rounded-[20px] bg-white border border-gray-100 p-6"

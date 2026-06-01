@@ -126,7 +126,7 @@ export function CaptureReview() {
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
       <header className="bg-white border-b border-[#EBEBF0] sticky top-0 z-20">
-        <div className="mx-auto max-w-[560px] px-5 h-14 flex items-center">
+        <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center">
           <button
             type="button"
             onClick={() => navigate(nextPath)}
@@ -137,7 +137,7 @@ export function CaptureReview() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[560px] px-5 pb-24">
+      <main className="mx-auto max-w-[1120px] px-5 pb-24">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -156,7 +156,7 @@ export function CaptureReview() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 mb-4">
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="bg-white border border-[#EBEBF0] rounded-2xl p-4">
               <div className="w-9 h-9 rounded-2xl bg-[#fff5f7] flex items-center justify-center mb-3">
                 <Image className="w-4.5 h-4.5 text-[#c9485b]" strokeWidth={2.2} />
@@ -173,7 +173,7 @@ export function CaptureReview() {
             </div>
           </div>
 
-          <section className="space-y-3 mb-5">
+          <section className="space-y-4 mb-4">
             <div className="bg-white border border-[#EBEBF0] rounded-2xl overflow-hidden">
               <div className="px-4 py-3 border-b border-[#F0F0F5] flex items-center justify-between">
                 <div>
@@ -257,7 +257,7 @@ export function CaptureReview() {
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 bg-[#F5F5F7]/95 backdrop-blur-sm border-t border-[#EBEBF0] px-5 py-4">
-        <div className="mx-auto max-w-[560px] space-y-2">
+        <div className="mx-auto max-w-[1120px] space-y-2">
           <button
             type="button"
             disabled={isReuploading}

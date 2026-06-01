@@ -206,13 +206,13 @@ export function InviteJoin() {
   return (
     <div className="min-h-screen bg-[#F6F7FB]">
       <header className="bg-white border-b border-[#E5E8F0] sticky top-0 z-20">
-        <div className="mx-auto max-w-[560px] px-5 h-14 flex items-center">
+        <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center">
           <button onClick={() => setStep("pin")} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#F6F7FB] transition-colors">
             <ArrowLeft className="w-[18px] h-[18px] text-[#565C7A]" />
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-[560px] px-5 pb-12">
+      <main className="mx-auto max-w-[1120px] px-5 pb-12">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           <div className="pt-7 mb-5">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#EEEEF9] rounded-full mb-3">

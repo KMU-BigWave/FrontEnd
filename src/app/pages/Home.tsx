@@ -183,7 +183,7 @@ export function HomePage() {
 
       {/* Header */}
       <header className="bg-white border-b border-[#EBEBF0] sticky top-0 z-10">
-        <div className="px-5 h-14 flex items-center justify-between max-w-3xl mx-auto">
+        <div className="px-5 h-14 flex items-center justify-between max-w-[1120px] mx-auto">
           <span className="text-[17px] font-bold text-[#1C1C1E] tracking-tight">
             티격태격
           </span>
@@ -209,7 +209,7 @@ export function HomePage() {
       </header>
 
       {/* Body */}
-      <div className="px-5 py-6 max-w-3xl mx-auto">
+      <div className="px-5 py-6 max-w-[1120px] mx-auto">
         {/* Welcome */}
         <div className="mb-6">
           <p className="text-[12.5px] text-[#AEAEB2] mb-0.5 font-medium">환영합니다</p>
@@ -220,7 +220,7 @@ export function HomePage() {
         </div>
 
         {/* Mode Cards */}
-        <div className="grid grid-cols-1 gap-3 mb-7">
+        <div className="grid grid-cols-1 gap-4 mb-4">
           {/* 두 사람 모드 */}
           <motion.button
             initial={{ opacity: 0, y: 8 }}

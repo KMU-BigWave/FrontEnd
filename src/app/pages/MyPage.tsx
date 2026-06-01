@@ -70,7 +70,7 @@ export function MyPage() {
     <div className="min-h-screen bg-[#F5F5F7]">
       {/* Header */}
       <header className="bg-white border-b border-[#EBEBF0] sticky top-0 z-20">
-        <div className="mx-auto max-w-[560px] px-5 h-14 flex items-center justify-between">
+        <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center justify-between">
           <button
             onClick={() => navigate(-1)}
             className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#F5F5F7] transition-colors"
@@ -88,7 +88,7 @@ export function MyPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[560px] px-5 pb-12">
+      <main className="mx-auto max-w-[1120px] px-5 pb-12">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -127,7 +127,7 @@ export function MyPage() {
           </div>
 
           {/* Account Info */}
-          <div className="bg-white rounded-2xl border border-[#EBEBF0] mb-3 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-[#EBEBF0] mb-4 overflow-hidden">
             <div className="px-5 py-4 border-b border-[#F5F5F7]">
               <p className="text-[11.5px] font-semibold text-[#AEAEB2] uppercase tracking-wider mb-3">계정 정보</p>
               <div className="flex items-center justify-between">
@@ -144,7 +144,7 @@ export function MyPage() {
           </div>
 
           {/* Personal Info */}
-          <div className="bg-white rounded-2xl border border-[#EBEBF0] mb-3 overflow-hidden">
+          <div className="bg-white rounded-2xl border border-[#EBEBF0] mb-4 overflow-hidden">
             <div className="px-5 py-4 border-b border-[#F5F5F7]">
               <p className="text-[11.5px] font-semibold text-[#AEAEB2] uppercase tracking-wider">개인 정보</p>
             </div>
