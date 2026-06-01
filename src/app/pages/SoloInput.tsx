@@ -51,7 +51,7 @@ export function SoloInput() {
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
       <header className="bg-white border-b border-[#EBEBF0] sticky top-0 z-20">
-        <div className="mx-auto max-w-[560px] px-5 h-14 flex items-center gap-3">
+        <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center gap-3">
           <button
             onClick={() => navigate("/home")}
             className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#F5F5F7] transition-colors"
@@ -62,7 +62,7 @@ export function SoloInput() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[560px] px-5 pb-12">
+      <main className="mx-auto max-w-[1120px] px-5 pb-12">
         <motion.div
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -84,7 +84,7 @@ export function SoloInput() {
           </div>
 
           {/* Tips */}
-          <div className="bg-[#fff5f7] rounded-2xl p-4 mb-5 border border-[#ffd1da]/50">
+          <div className="bg-[#fff5f7] rounded-2xl p-4 mb-4 border border-[#ffd1da]/50">
             <p className="text-[12px] font-semibold text-[#c9485b] mb-2">💡 이렇게 적으면 더 정확해요</p>
             <div className="space-y-1">
               {[

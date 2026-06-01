@@ -236,13 +236,13 @@ export function TwoPersonInput() {
     return (
       <div className="min-h-screen bg-[#F5F5F7]">
         <header className="bg-white border-b border-[#EBEBF0] sticky top-0 z-20">
-          <div className="mx-auto max-w-[480px] px-5 h-14 flex items-center">
+          <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center">
             <button onClick={() => navigate("/home")} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#F5F5F7] transition-colors">
               <ArrowLeft className="w-[18px] h-[18px] text-[#636366]" />
             </button>
           </div>
         </header>
-        <main className="mx-auto max-w-[480px] px-5 pb-12">
+        <main className="mx-auto max-w-[1120px] px-5 pb-12">
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }}>
             <div className="pt-7 pb-8">
               <div className="text-2xl mb-3">👫</div>
@@ -301,13 +301,13 @@ export function TwoPersonInput() {
   return (
     <div className="min-h-screen bg-[#F5F5F7]">
       <header className="bg-white border-b border-[#EBEBF0] sticky top-0 z-20">
-        <div className="mx-auto max-w-[560px] px-5 h-14 flex items-center">
+        <div className="mx-auto max-w-[1120px] px-5 h-14 flex items-center">
           <button onClick={() => setStep("create")} className="w-8 h-8 rounded-xl flex items-center justify-center hover:bg-[#F5F5F7] transition-colors">
             <ArrowLeft className="w-[18px] h-[18px] text-[#636366]" />
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-[560px] px-5 pb-12">
+      <main className="mx-auto max-w-[1120px] px-5 pb-12">
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
           {/* Invite link card */}
           <div className="my-6 p-4 rounded-2xl bg-white border border-[#EBEBF0]">
@@ -346,19 +346,19 @@ export function TwoPersonInput() {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[14px] font-bold text-[#222222] tracking-tight">대화 캡쳐로 분석하기</p>
-              <p className="text-[12px] text-[#c9485b] mt-0.5 truncate font-medium">
+              <p className="text-[12px] text-[#c9485b] mt-0.5 font-medium leading-relaxed break-keep">
                 {captureImages.length
                   ? `${captureImages.length}장 선택됨`
                   : "카톡 캡쳐 이미지를 선택할 수 있어요"}
               </p>
             </div>
             {captureImages.length > 0 && (
-              <span className="px-2.5 py-1 rounded-full bg-white text-[#c9485b] text-[11px] font-semibold border border-[#ffd1da]">
+              <span className="px-2.5 py-1 rounded-full bg-white text-[#c9485b] text-[11px] font-semibold border border-[#ffd1da] whitespace-nowrap shrink-0">
                 선택됨
               </span>
             )}
             {captureImages.length === 0 && (
-              <span className="px-2.5 py-1 rounded-full bg-white text-[#c9485b] text-[11px] font-semibold border border-[#ffd1da]">
+              <span className="px-2.5 py-1 rounded-full bg-white text-[#c9485b] text-[11px] font-semibold border border-[#ffd1da] whitespace-nowrap shrink-0">
                 이미지
               </span>
             )}

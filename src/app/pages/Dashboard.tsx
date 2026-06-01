@@ -279,7 +279,7 @@ function Bone({ className }: { className?: string }) {
 
 function DashboardSkeleton() {
   return (
-    <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[680px] mx-auto">
+    <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1120px] mx-auto">
       <div className="h-[200px] bg-[#1A1828] mb-px" />
       <div className="px-5 py-6 space-y-3">
         <Bone className="h-5 w-24 rounded-full" />
@@ -1136,7 +1136,7 @@ export function DashboardPage() {
     <div className="flex-1 flex flex-col min-h-screen" style={{ background: "#F0F0F4" }}>
       {header}
 
-      <div className="flex-1 overflow-y-auto pb-16 w-full max-w-[680px] mx-auto">
+      <div className="flex-1 overflow-y-auto pb-16 w-full max-w-[1120px] mx-auto">
 
         {/* ━━━━━━ 히어로 배너 ━━━━━━ */}
         <motion.div

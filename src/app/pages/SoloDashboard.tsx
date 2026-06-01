@@ -592,7 +592,7 @@ export function SoloDashboard() {
         <div className="w-8" />
       </header>
 
-      <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1200px] mx-auto">
+      <div className="flex-1 overflow-y-auto pb-12 w-full max-w-[1120px] mx-auto">
         {isApiLoading && !apiError ? (
           <SoloAnalysisLoadingView currentStep={loadingStep} fullScreen={false} />
         ) : (
