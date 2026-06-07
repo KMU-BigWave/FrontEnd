@@ -111,17 +111,6 @@ export function WaitingRoom() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDemoSkip = () => {
-    if (!roomId) return;
-    const existing = JSON.parse(sessionStorage.getItem("analysisData") || "{}");
-    sessionStorage.setItem("analysisData", JSON.stringify({
-      ...existing,
-      mode: "two-person",
-      sessionId: roomId,
-    }));
-    navigate("/analysis");
-  };
-
   const progress = ((currentStep + 1) / steps.length) * 100;
 
   if (analysisFailed) {
@@ -277,12 +266,6 @@ export function WaitingRoom() {
           </div>
         )}
 
-        <button
-          onClick={handleDemoSkip}
-          className="text-[11.5px] text-[#929292] hover:text-[#c9485b] transition-colors font-medium"
-        >
-          데모용: 예시 데이터로 바로 분석 →
-        </button>
       </motion.div>
     </div>
   );

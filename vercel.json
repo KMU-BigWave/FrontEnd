@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "http://bigwave2.duckdns.org/$1"
+    }
+  ]
+}
