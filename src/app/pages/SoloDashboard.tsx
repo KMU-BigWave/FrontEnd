@@ -182,12 +182,35 @@ function buildSoloDashboardData({
   const sections = llm?.sections;
   const dk = llm?.diagramKeywords;
 
-  // GPT가 뽑은 diagramKeywords(flat) 우선 사용, 없으면 evidence → statements 폴백
+  // GPT 키워드 → 모델 evidence(원문+신뢰도) 매핑
+  const ev = evidence?.keywordEvidence;
+  const makeEvMap = (section?: { keyword: string; evidence: { text: string; confidence?: number; confidencePercent?: number }[] }[]) =>
+    new Map((section ?? []).map(({ keyword, evidence: items }) => [keyword, items[0] ?? null]));
+
+  const factEvMap   = makeEvMap(ev?.facts);
+  const interpEvMap = makeEvMap(ev?.interpretations);
+  const emotEvMap   = makeEvMap(ev?.emotions);
+  const needEvMap   = makeEvMap(ev?.needs);
+
+  const kwFromGpt = (
+    list: string[],
+    evMap: Map<string, { text: string; confidence?: number; confidencePercent?: number } | null>,
+  ): KeywordItem[] =>
+    list.map((kw) => {
+      const e = evMap.get(kw);
+      return {
+        text: shorten(kw),
+        sourceText: e?.text ?? kw,
+        confidence: e?.confidencePercent ?? toPercent(e?.confidence),
+      };
+    });
+
+  // GPT가 뽑은 diagramKeywords(flat) 우선 사용 + 모델 신뢰도 매핑, 없으면 evidence → statements 폴백
   const llmKeywords: SoloDashboardData["keywords"] = {
-    fact:           (dk?.facts ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
-    interpretation: (dk?.interpretations ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
-    emotion:        (dk?.emotions ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
-    request:        (dk?.needs ?? []).map((kw) => ({ text: shorten(kw), sourceText: kw, confidence: 0 })),
+    fact:           kwFromGpt(dk?.facts ?? [], factEvMap),
+    interpretation: kwFromGpt(dk?.interpretations ?? [], interpEvMap),
+    emotion:        kwFromGpt(dk?.emotions ?? [], emotEvMap),
+    request:        kwFromGpt(dk?.needs ?? [], needEvMap),
   };
 
   const hasLlmKeywords = Object.values(llmKeywords).some((arr) => arr.length > 0);
@@ -277,10 +300,12 @@ function FixedTooltip({ node, onClose }: { node: SelectedNode; onClose: () => vo
             <Quote size={11} className="text-[#ffd1da]" strokeWidth={3} />
             <p className="font-semibold text-[11.5px] text-white/70">입력된 원문</p>
           </div>
-          <div className="flex items-center gap-1 px-2 py-0.5 bg-[#ffd1da]/20 rounded-full">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#ffd1da]" />
-            <span className="text-[10.5px] font-semibold text-[#ffd1da]">신뢰도 {node.confidence}%</span>
-          </div>
+          {node.confidence > 0 && (
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-[#ffd1da]/20 rounded-full">
+              <div className="w-1.5 h-1.5 rounded-full bg-[#ffd1da]" />
+              <span className="text-[10.5px] font-semibold text-[#ffd1da]">신뢰도 {Math.min(node.confidence, 99)}%</span>
+            </div>
+          )}
         </div>
         <p className="text-[12.5px] text-white/90 leading-relaxed break-keep">"{node.sourceText}"</p>
         <button
